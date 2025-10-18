@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Math Quest</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="app__header">
+      <h1>Math Quest</h1>
+      <p class="tagline">Master word problems one win at a time.</p>
+      <section class="scoreboard" aria-label="Progress">
+        <div class="scoreboard__item">
+          <span class="scoreboard__label">Solved</span>
+          <span class="scoreboard__value" id="stat-solved">0</span>
+        </div>
+        <div class="scoreboard__item">
+          <span class="scoreboard__label">Attempts</span>
+          <span class="scoreboard__value" id="stat-attempts">0</span>
+        </div>
+        <div class="scoreboard__item">
+          <span class="scoreboard__label">Streak</span>
+          <span class="scoreboard__value" id="stat-streak">0</span>
+        </div>
+        <div class="scoreboard__item">
+          <span class="scoreboard__label">Best Streak</span>
+          <span class="scoreboard__value" id="stat-best">0</span>
+        </div>
+      </section>
+    </header>
+
+    <div class="app__content">
+      <section class="question-card" aria-live="polite">
+        <div class="question-card__badge" id="question-mode">Loading…</div>
+        <div class="question-card__body">
+          <p class="question-card__text" id="question-text">Loading questions…</p>
+        </div>
+        <form class="answer-form" id="answer-form">
+          <label for="answer-input" class="answer-form__label">Your answer</label>
+          <input
+            id="answer-input"
+            name="answer"
+            class="answer-form__input"
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            required
+          >
+          <div class="answer-form__options" id="options-container" hidden></div>
+          <div class="answer-form__actions">
+            <button type="submit" class="button button--primary" id="check-button">Check Answer</button>
+            <button type="button" class="button" id="skip-button">Skip</button>
+          </div>
+        </form>
+        <div class="feedback" id="feedback" role="status" aria-live="assertive"></div>
+      </section>
+
+      <aside class="browser" aria-label="Browse questions">
+        <header class="browser__header">
+          <h2>Browse Questions</h2>
+          <div class="browser__pagination">
+            <button type="button" class="button button--ghost" id="prev-page">Previous</button>
+            <span class="browser__page-indicator" id="page-indicator">Page 1</span>
+            <button type="button" class="button button--ghost" id="next-page">Next</button>
+          </div>
+        </header>
+        <ul class="browser__list" id="question-list">
+          <li class="browser__empty">Loading questions…</li>
+        </ul>
+      </aside>
+    </div>
+
+    <section class="history" aria-label="Recent activity">
+      <header class="history__header">
+        <h2>Recent Turns</h2>
+        <label class="switch">
+          <span class="switch__label">Focus on missed questions</span>
+          <input type="checkbox" id="review-toggle">
+          <span class="switch__slider" aria-hidden="true"></span>
+        </label>
+      </header>
+      <ul class="history__list" id="history-list"></ul>
+    </section>
+  </main>
+
+  <div class="confetti-layer" id="confetti-layer" aria-hidden="true"></div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

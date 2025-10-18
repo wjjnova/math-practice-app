@@ -10,6 +10,7 @@ let currentQuestion = null;
 const recentlyAsked = [];
 const browserState = { page: 1, pageSize: 8 };
 let audioController = null;
+let consecutiveCorrect = 0;
 
 if (document.readyState === 'loading') {
   window.addEventListener('DOMContentLoaded', () => {
@@ -28,6 +29,7 @@ async function init() {
   elements.questionMode = document.getElementById('question-mode');
   elements.answerForm = document.getElementById('answer-form');
   elements.answerInput = document.getElementById('answer-input');
+  elements.hintButton = document.getElementById('hint-button');
   elements.checkButton = document.getElementById('check-button');
   elements.skipButton = document.getElementById('skip-button');
   elements.optionsContainer = document.getElementById('options-container');
@@ -89,8 +91,48 @@ async function init() {
     loadNextQuestion(true);
   });
 
+  // Wire clear history button if present
+  elements.clearHistoryButton = document.getElementById('clear-history-button');
+  if (elements.clearHistoryButton) {
+    elements.clearHistoryButton.addEventListener('click', () => {
+      if (confirm('Clear recent history? This cannot be undone.')) {
+        clearHistory();
+      }
+    });
+  }
+
   elements.answerForm.addEventListener('submit', onSubmit);
-  elements.skipButton.addEventListener('click', () => loadNextQuestion(true));
+  elements.skipButton.addEventListener('click', () => {
+    // skipping should reset consecutive correct counter
+    consecutiveCorrect = 0;
+    loadNextQuestion(true);
+  });
+
+  if (elements.hintButton) {
+    elements.hintButton.addEventListener('click', () => {
+      if (!currentQuestion) return;
+      // show the full explanatory answer (not just the final number)
+      const full = String(currentQuestion.answer ?? '');
+      // remove trailing '#### 123' final line if present
+      const cleaned = full.replace(/\n?####\s*[-+]?\d+(?:\.\d+)?\s*$/, '').trim();
+      // escape HTML and preserve newlines for safe display
+      const escapeHtml = (str) => str.replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[ch]));
+      const rendered = escapeHtml(cleaned).replace(/\n/g, '<br>');
+      elements.feedback.innerHTML = `Hint: <span class="hint-body">${rendered}</span>`;
+      elements.feedback.className = 'feedback feedback--hint';
+      // leave the hint visible a bit longer so the user can read the steps
+      setTimeout(() => {
+        elements.feedback.textContent = '';
+        elements.feedback.className = 'feedback';
+      }, 5000);
+    });
+  }
   elements.answerInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       elements.answerForm.requestSubmit();
@@ -120,7 +162,10 @@ function onSubmit(event) {
   const normalizedUser = normalizeAnswer(userInput);
 
   const correctNumeric = typeof currentQuestion.answerNumeric === 'number' ? currentQuestion.answerNumeric : null;
-  const normalizedTarget = normalizeAnswer(currentQuestion.answer);
+  const targetAnswer = typeof currentQuestion.answerValue === 'string' && currentQuestion.answerValue
+    ? currentQuestion.answerValue
+    : currentQuestion.answer ?? '';
+  const normalizedTarget = normalizeAnswer(targetAnswer);
 
   const numericMatch = correctNumeric !== null && userNumeric !== null
     ? areNumbersEqual(userNumeric, correctNumeric)
@@ -129,16 +174,27 @@ function onSubmit(event) {
   const isCorrect = numericMatch || stringMatch;
 
   const { revealAnswer } = registerAttempt(currentQuestion, userInput, isCorrect);
-  provideFeedback(isCorrect, currentQuestion.answer, revealAnswer);
+  provideFeedback(isCorrect, targetAnswer, revealAnswer);
 
   if (isCorrect) {
     spawnConfetti();
     playCelebrationSound().catch((error) => {
       console.warn('Celebration audio failed', error);
     });
+    // track consecutive correct answers (only count if we didn't have to retry)
+    consecutiveCorrect += 1;
+    if (consecutiveCorrect > 3) {
+      // 50% chance to show the big hamster animation
+      if (Math.random() < 0.5) {
+        showHamster();
+      }
+      consecutiveCorrect = 0;
+    }
     window.setTimeout(() => loadNextQuestion(), 550);
   } else {
     elements.answerInput.select();
+    // reset streak-on-success counter when incorrect
+    consecutiveCorrect = 0;
   }
 }
 
@@ -177,19 +233,34 @@ function registerAttempt(question, userInput, isCorrect) {
   const revealAnswer = !isCorrect && (progress.misses ?? 0) >= 2;
 
   const historyEntry = {
-    id: `${question.id}-${progress.attempts}`,
     questionId: question.id,
     question: question.question,
     userAnswer: userInput,
-    correctAnswer: question.answer,
+    correctAnswer: question.answerValue ?? question.answer,
     correct: isCorrect,
+    attempts: 1,
     timestamp: Date.now(),
     revealAnswer,
   };
 
+  const existingIndex = state.history.findIndex((entry) => entry.questionId === question.id);
+  if (existingIndex >= 0) {
+    const existing = state.history.splice(existingIndex, 1)[0];
+    historyEntry.attempts = (existing.attempts ?? 1) + 1;
+    historyEntry.timestamp = Date.now();
+    historyEntry.revealAnswer = revealAnswer;
+    historyEntry.correct = isCorrect;
+    historyEntry.userAnswer = userInput;
+    historyEntry.correctAnswer = question.answerValue ?? question.answer;
+    historyEntry.id = existing.id ?? question.id;
+  } else {
+    historyEntry.id = question.id;
+  }
+
   state.history.unshift(historyEntry);
-  if (state.history.length > 12) {
-    state.history.length = 12;
+  // keep only the most recent 15 entries
+  if (state.history.length > 15) {
+    state.history.length = 15;
   }
 
   persistState();
@@ -203,11 +274,16 @@ function provideFeedback(isCorrect, correctAnswer, revealAnswer = false) {
   if (isCorrect) {
     elements.feedback.textContent = 'Nice work! You nailed it.';
     elements.feedback.className = 'feedback feedback--success';
+    // play success sound (handled elsewhere) -- keep synth call in onSubmit
   } else {
     elements.feedback.textContent = revealAnswer
       ? `Not yet. Here's the answer: ${correctAnswer}`
       : 'Not yet. Check your work and try again.';
     elements.feedback.className = 'feedback feedback--error';
+    // play a failure sound to indicate incorrect answer
+    playFailSound().catch((err) => {
+      // ignore playback errors
+    });
   }
 }
 
@@ -237,6 +313,15 @@ function loadNextQuestion(force = false) {
   }
 
   setQuestion(nextQuestion, 'auto');
+}
+
+// show a temporary hamster overlay
+function showHamster() {
+  const layer = document.getElementById('hamster-layer');
+  if (!layer) return;
+  layer.classList.add('show');
+  // remove after 2s so it remains large long enough
+  setTimeout(() => layer.classList.remove('show'), 2000);
 }
 
 function pickQuestion() {
@@ -444,8 +529,12 @@ function renderChoices(question) {
     button.className = 'choice';
     button.textContent = option;
     button.addEventListener('click', () => {
+      // clear selected state on other choices
+      Array.from(container.querySelectorAll('.choice')).forEach((el) => el.classList.remove('choice--selected'));
+      button.classList.add('choice--selected');
       elements.answerInput.value = option;
-      elements.answerInput.focus();
+      // move focus to Check button for quick keyboard use
+      elements.checkButton.focus();
     });
     container.appendChild(button);
   });
@@ -501,9 +590,18 @@ function renderHistory() {
     return;
   }
 
+  // render most recent first (state.history is already newest-first)
   state.history.forEach((entry) => {
     const item = document.createElement('li');
-    item.className = `history__item${entry.correct ? '' : ' history__item--error'}`;
+    const attemptCount = Math.max(1, entry.attempts ?? 1);
+    const wasRetry = entry.correct && attemptCount > 1;
+    let itemClass = 'history__item';
+    if (entry.correct) {
+      itemClass = wasRetry ? 'history__item history__item--warn' : 'history__item';
+    } else {
+      itemClass = 'history__item history__item--error';
+    }
+    item.className = itemClass;
 
     const question = document.createElement('p');
     question.className = 'history__question';
@@ -512,15 +610,31 @@ function renderHistory() {
     const result = document.createElement('span');
     result.className = 'history__result';
     const showAnswer = entry.correct || entry.revealAnswer === true || !('revealAnswer' in entry);
+    const attemptNote = attemptCount > 1 ? ` (Attempt ${attemptCount})` : '';
     result.textContent = entry.correct
-      ? `✅ Answered ${entry.userAnswer}`
+      ? wasRetry
+        ? `⚠️ Answered ${entry.userAnswer}${attemptNote}`
+        : `✅ Answered ${entry.userAnswer}${attemptNote}`
       : showAnswer
-        ? `❌ You wrote ${entry.userAnswer} • Correct answer ${entry.correctAnswer}`
-        : `❌ You wrote ${entry.userAnswer} • Keep practicing!`;
+        ? `❌ You wrote ${entry.userAnswer}${attemptNote} • Correct answer ${entry.correctAnswer}`
+        : `❌ You wrote ${entry.userAnswer}${attemptNote} • Keep practicing!`;
 
     item.append(question, result);
     list.appendChild(item);
   });
+}
+
+function clearHistory() {
+  // Reset everything: stats, progress, incorrect set and history
+  state.history = [];
+  state.progress = {};
+  state.incorrect = new Set();
+  state.stats = { solved: 0, attempts: 0, streak: 0, best: 0 };
+  state.focusReview = false;
+  persistState();
+  renderHistory();
+  renderQuestionList();
+  updateStats();
 }
 
 function spawnConfetti() {
@@ -561,7 +675,46 @@ async function playCelebrationSound() {
     audioController = createAudioController();
   }
   await audioController.resume();
+  // Prefer playing a bundled success.mp3 if present (easier to control, can be replaced by the user)
+  try {
+    // quick HEAD to check presence
+    const resp = await fetch('/success.mp3', { method: 'HEAD', cache: 'no-store' });
+    if (resp.ok) {
+      const a = new Audio('/success.mp3');
+      a.volume = 0.9;
+      await a.play();
+      return;
+    }
+  } catch (err) {
+    // ignore and fall back to synth
+  }
+
+  // fallback to synth chord
   audioController.playChord([523.25, 659.25, 783.99]);
+}
+
+async function playFailSound() {
+  // prefer fail.mp3 if present, otherwise synth a short dissonant sting
+  try {
+    const resp = await fetch('/fail.mp3', { method: 'HEAD', cache: 'no-store' });
+    if (resp.ok) {
+      const a = new Audio('/fail.mp3');
+      a.volume = 0.9;
+      await a.play();
+      return;
+    }
+  } catch (err) {
+    // fall back
+  }
+
+  // short dissonant synth
+  if (!audioController) {
+    audioController = createAudioController();
+  }
+  await audioController.resume();
+  // play a quick minor-second cluster
+  const base = 220.0;
+  audioController.playChord([base, base * Math.pow(2, 1 / 12)]);
 }
 
 function createAudioController() {
@@ -583,18 +736,58 @@ function createAudioController() {
 
   function playChord(frequencies) {
     const now = context.currentTime;
-    const duration = 0.45;
+    const duration = 0.5; // celebration duration (0.5 seconds)
+    const attack = 0.02;
+    const sustainLevel = 0.22;
+    const release = 0.08;
+
+    // master nodes
+    const masterGain = context.createGain();
+    masterGain.gain.setValueAtTime(1, now);
+    const lowpass = context.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.setValueAtTime(7000, now);
+    lowpass.Q.setValueAtTime(0.7, now);
+
+    masterGain.connect(lowpass).connect(context.destination);
+
+    // For each frequency, create two slightly detuned voices (sine + saw)
     frequencies.forEach((frequency, index) => {
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      oscillator.frequency.value = frequency;
-      oscillator.type = index % 2 === 0 ? 'sine' : 'triangle';
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.2, now + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-      oscillator.connect(gain).connect(context.destination);
-      oscillator.start(now);
-      oscillator.stop(now + duration + 0.02);
+      const detuneCents = index % 2 === 0 ? 8 : -8; // alternate detune
+      const pan = (index - (frequencies.length - 1) / 2) / (frequencies.length); // spread across stereo
+
+      const voiceGain = context.createGain();
+      const panner = context.createStereoPanner();
+      panner.pan.setValueAtTime(pan, now);
+      voiceGain.connect(panner).connect(masterGain);
+
+      // Sine voice (clean)
+      const osc1 = context.createOscillator();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(frequency, now);
+      osc1.detune.setValueAtTime(detuneCents, now);
+
+      // Saw voice (body)
+      const osc2 = context.createOscillator();
+      osc2.type = 'sawtooth';
+      osc2.frequency.setValueAtTime(frequency, now);
+      osc2.detune.setValueAtTime(-detuneCents, now);
+
+      // per-voice gain envelope
+      const g = context.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(sustainLevel, now + attack);
+      g.gain.setValueAtTime(sustainLevel, now + duration - release);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + duration + 0.01);
+
+      osc1.connect(g);
+      osc2.connect(g);
+      g.connect(voiceGain);
+
+      osc1.start(now);
+      osc2.start(now + 0.005 * Math.random()); // slight phasing
+      osc1.stop(now + duration + 0.02);
+      osc2.stop(now + duration + 0.02);
     });
   }
 
@@ -664,6 +857,10 @@ function persistState() {
     ...state,
     incorrect: Array.from(state.incorrect),
   };
+  // ensure we don't persist more than 20 recent history entries
+  if (Array.isArray(toPersist.history) && toPersist.history.length > 20) {
+    toPersist.history = toPersist.history.slice(0, 20);
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(toPersist));
 }
 
@@ -684,20 +881,41 @@ function defaultState() {
 
 function normalizeQuestions(collection) {
   return collection
-    .filter((item) => item && item.question && item.answer)
+    .filter((item) => item && item.question && (item.answer || item.answerValue))
     .map((item, index) => {
       const questionText = typeof item.question === 'string'
         ? item.question.trim()
         : String(item.question ?? '');
-      const answerValue = typeof item.answer === 'string' ? item.answer : String(item.answer ?? '');
+
+      const rawFullAnswer = typeof item.answer === 'string'
+        ? item.answer
+        : typeof item.answerValue === 'string'
+          ? item.answerValue
+          : '';
+      const fullAnswer = rawFullAnswer ? rawFullAnswer.trim() : '';
+
+      let finalAnswer;
+      if (typeof item.answerValue === 'string' && item.answerValue.trim()) {
+        finalAnswer = item.answerValue.trim();
+      } else if (fullAnswer.includes('####')) {
+        finalAnswer = fullAnswer.split('####').pop().trim();
+      } else if (fullAnswer) {
+        const lines = fullAnswer.split('\n');
+        finalAnswer = lines[lines.length - 1].trim();
+      } else {
+        finalAnswer = '';
+      }
+
       const answerNumeric = typeof item.answerNumeric === 'number'
         ? item.answerNumeric
-        : parseNumeric(answerValue);
+        : parseNumeric(finalAnswer);
+
       return {
         ...item,
         id: item.id ?? item.question_id ?? `q${index}`,
         question: questionText,
-        answer: answerValue,
+        answer: fullAnswer,
+        answerValue: finalAnswer,
         position: typeof item.position === 'number' ? item.position : index + 1,
         answerNumeric,
       };

@@ -21,6 +21,7 @@ import urllib.parse
 import re
 from pathlib import Path
 from socketserver import ThreadingMixIn
+import signal
 from fractions import Fraction
 
 SERVER_ROOT = Path(__file__).resolve().parent
@@ -70,16 +71,30 @@ def load_dataset() -> list[dict]:
                     continue
                 item = json.loads(line)
                 question_id = item.get("question_id") or f"q{index}"
-                answer = item.get("answer", "")
-                answer_value = answer.split("####")[-1].strip() if "####" in answer else answer.strip()
-                normalized_answer = answer_value.replace(",", "")
+                raw_answer = item.get("answer")
+                full_answer = ""
+                if isinstance(raw_answer, str):
+                    full_answer = raw_answer.strip()
+                elif raw_answer is not None:
+                    full_answer = str(raw_answer).strip()
+
+                if full_answer:
+                    if "####" in full_answer:
+                        answer_value = full_answer.rsplit("####", 1)[-1].strip()
+                    else:
+                        answer_value = full_answer.splitlines()[-1].strip()
+                else:
+                    answer_value = ""
+
+                normalized_value = answer_value.replace(",", "")
                 dataset.append(
                     {
                         "id": question_id,
                         "position": index,
                         "question": item["question"].strip(),
-                        "answer": normalized_answer,
-                        "answerNumeric": extract_numeric(normalized_answer),
+                        "answer": full_answer,
+                        "answerValue": answer_value,
+                        "answerNumeric": extract_numeric(normalized_value),
                     }
                 )
 
@@ -239,14 +254,40 @@ def main() -> None:
     args = parse_args()
     server_address = ("", args.port)
 
-    with ThreadingHTTPServer(server_address, StaticHandler) as httpd:
-        host, port = httpd.server_address
-        print(f"Serving Math Quest at http://{host or 'localhost'}:{port}")
-        print("Press Ctrl+C to stop.")
+    # instantiate server so we can reference it from signal handlers
+    httpd = ThreadingHTTPServer(server_address, StaticHandler)
+
+    def _shutdown_handler(signum, frame):
+        # Called in signal handler context; delegate to a thread so we
+        # avoid doing heavy work inside the handler.
+        print(f"Received signal {signum}; shutting down server...")
         try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\nShutting down...")
+            threading.Thread(target=httpd.shutdown, daemon=True).start()
+        except Exception as exc:  # pragma: no cover - best-effort logging
+            print(f"Error while trying to shutdown server: {exc}")
+
+    # register handlers for clean shutdown on SIGINT/SIGTERM
+    signal.signal(signal.SIGINT, _shutdown_handler)
+    signal.signal(signal.SIGTERM, _shutdown_handler)
+
+    host, port = httpd.server_address
+    print(f"Serving Math Quest at http://{host or 'localhost'}:{port}")
+    print("Press Ctrl+C to stop.")
+
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        # KeyboardInterrupt may still arrive; try to shut down cleanly
+        print("\nKeyboard interrupt received; shutting down...")
+        try:
+            httpd.shutdown()
+        except Exception:
+            pass
+    finally:
+        try:
+            httpd.server_close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

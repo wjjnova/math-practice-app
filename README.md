@@ -13,11 +13,15 @@ A self-contained browser app that serves grade school math word problems drawn f
 
 ## Quick Start
 
-1. Start the bundled dev server (serves the static site and exposes the GSM8K dataset API):
-   ```bash
-   python3 src/server/serve.py --port 3000
-   ```
-2. Open your browser to `http://localhost:3000`.
+1. Start the bundled dev server (serves the static site and exposes the GSM8K dataset API). The repository includes a convenience script:
+  ```bash
+  # preferred: start the app and open your browser
+  ./start.sh 3000
+
+  # or run the server directly
+  python3 src/server/serve.py --port 3000
+  ```
+2. If you used `./start.sh`, your browser should open automatically to `http://localhost:3000`.
 3. Use the "Browse Questions" panel to pick any problem, or stay in practice mode for the adaptive flow.
 
 Your progress (attempts, streaks, and which questions still need review) saves automatically in the browser. Clear `localStorage` for a fresh start.

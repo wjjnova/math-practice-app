@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Math Quest</title>
+  <title>Math Quest — GSM8K</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <main class="app">
     <header class="app__header">
-      <h1>Math Quest</h1>
+  <h1>Math Quest — GSM8K</h1>
       <p class="tagline">Master word problems one win at a time.</p>
       <section class="scoreboard" aria-label="Progress">
         <div class="scoreboard__item">
@@ -46,12 +46,18 @@
             type="text"
             inputmode="decimal"
             autocomplete="off"
-            required
+            readonly
+            placeholder="Choose an option"
           >
           <div class="answer-form__options" id="options-container" hidden></div>
           <div class="answer-form__actions">
-            <button type="submit" class="button button--primary" id="check-button">Check Answer</button>
-            <button type="button" class="button" id="skip-button">Skip</button>
+            <div class="answer-form__actions-left">
+              <button type="submit" class="button button--primary" id="check-button">Check Answer</button>
+              <button type="button" class="button" id="skip-button">Skip</button>
+            </div>
+            <div class="answer-form__actions-right">
+              <button type="button" class="button button--ghost" id="hint-button">Hint</button>
+            </div>
           </div>
         </form>
         <div class="feedback" id="feedback" role="status" aria-live="assertive"></div>
@@ -75,17 +81,23 @@
     <section class="history" aria-label="Recent activity">
       <header class="history__header">
         <h2>Recent Turns</h2>
-        <label class="switch">
-          <span class="switch__label">Focus on missed questions</span>
-          <input type="checkbox" id="review-toggle">
-          <span class="switch__slider" aria-hidden="true"></span>
-        </label>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <label class="switch">
+            <span class="switch__label">Focus on missed questions</span>
+            <input type="checkbox" id="review-toggle">
+            <span class="switch__slider" aria-hidden="true"></span>
+          </label>
+          <button type="button" id="clear-history-button" class="button button--ghost">Clear history</button>
+        </div>
       </header>
       <ul class="history__list" id="history-list"></ul>
     </section>
   </main>
 
   <div class="confetti-layer" id="confetti-layer" aria-hidden="true"></div>
+  <div id="hamster-layer" class="hamster-layer" aria-hidden="true">
+    <span class="hamster-emoji" id="hamster-emoji" aria-hidden="true">🐹</span>
+  </div>
 
   <script type="module" src="./app.js"></script>
 </body>

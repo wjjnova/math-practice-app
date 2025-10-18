@@ -15,10 +15,12 @@ import argparse
 import http.server
 import os
 import json
-import random
 import threading
 import urllib.parse
+import urllib.request
+import urllib.error
 import re
+import ssl
 from pathlib import Path
 from socketserver import ThreadingMixIn
 import signal
@@ -29,10 +31,9 @@ SRC_ROOT = SERVER_ROOT.parent
 PROJECT_ROOT = SRC_ROOT.parent
 PUBLIC_DIR = SRC_ROOT / "client"
 FALLBACK_FILE = PUBLIC_DIR / "index.html"
-DATASET_PATH = PROJECT_ROOT / "data" / "gsm8k_train.jsonl"
-
-_DATASET_CACHE: list[dict] | None = None
-_DATASET_MAP: dict[str, dict] = {}
+DATASET_URL = "https://raw.githubusercontent.com/openai/grade-school-math/master/grade_school_math/data/train.jsonl"
+DATASET_FILE = PROJECT_ROOT / "data" / "questions_gsm8k.json"
+DATASET_ROUTE = "/data/questions_gsm8k.json"
 _DATASET_LOCK = threading.Lock()
 
 
@@ -55,61 +56,73 @@ def extract_numeric(value: str) -> float | None:
     return None
 
 
-def load_dataset() -> list[dict]:
-    global _DATASET_CACHE, _DATASET_MAP
+def ensure_dataset_file(force: bool = False) -> Path:
     with _DATASET_LOCK:
-        if _DATASET_CACHE is not None:
-            return _DATASET_CACHE
-        if not DATASET_PATH.exists():
-            raise FileNotFoundError(f"GSM8K data not found: {DATASET_PATH}")
+        if DATASET_FILE.exists() and not force:
+            return DATASET_FILE
+        print("Preparing GSM8K dataset...")
+        records = download_and_transform_dataset(DATASET_URL)
+        DATASET_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with DATASET_FILE.open("w", encoding="utf-8") as handle:
+            json.dump(records, handle, ensure_ascii=False, indent=2)
+        print(f"Wrote dataset with {len(records)} entries to {DATASET_FILE}")
+        return DATASET_FILE
 
-        dataset: list[dict] = []
-        with DATASET_PATH.open("r", encoding="utf-8") as handle:
-            for index, line in enumerate(handle, start=1):
-                line = line.strip()
-                if not line:
-                    continue
-                item = json.loads(line)
-                question_id = item.get("question_id") or f"q{index}"
-                raw_answer = item.get("answer")
-                full_answer = ""
-                if isinstance(raw_answer, str):
-                    full_answer = raw_answer.strip()
-                elif raw_answer is not None:
-                    full_answer = str(raw_answer).strip()
 
-                if full_answer:
-                    if "####" in full_answer:
-                        answer_value = full_answer.rsplit("####", 1)[-1].strip()
+def download_and_transform_dataset(source_url: str) -> list[dict]:
+    dataset: list[dict] = []
+    last_error: Exception | None = None
+    contexts = [None]
+    # fallback context that skips certificate verification (for environments without cert bundles)
+    contexts.append(ssl._create_unverified_context())  # type: ignore[arg-type]
+
+    for ctx in contexts:
+        try:
+            with urllib.request.urlopen(source_url, context=ctx) as response:
+                for index, raw_line in enumerate(response, start=1):
+                    line = raw_line.decode("utf-8").strip()
+                    if not line:
+                        continue
+                    item = json.loads(line)
+                    question_id = item.get("question_id") or f"q{index}"
+                    raw_answer = item.get("answer")
+                    full_answer = ""
+                    if isinstance(raw_answer, str):
+                        full_answer = raw_answer.strip()
+                    elif raw_answer is not None:
+                        full_answer = str(raw_answer).strip()
+
+                    if full_answer:
+                        if "####" in full_answer:
+                            answer_value = full_answer.rsplit("####", 1)[-1].strip()
+                        else:
+                            answer_value = full_answer.splitlines()[-1].strip()
                     else:
-                        answer_value = full_answer.splitlines()[-1].strip()
-                else:
-                    answer_value = ""
+                        answer_value = ""
 
-                normalized_value = answer_value.replace(",", "")
-                dataset.append(
-                    {
-                        "id": question_id,
-                        "position": index,
-                        "question": item["question"].strip(),
-                        "answer": full_answer,
-                        "answerValue": answer_value,
-                        "answerNumeric": extract_numeric(normalized_value),
-                    }
-                )
+                    normalized_value = answer_value.replace(",", "")
+                    dataset.append(
+                        {
+                            "id": question_id,
+                            "position": index,
+                            "question": item["question"].strip(),
+                            "answer": full_answer,
+                            "answerValue": answer_value,
+                            "answerNumeric": extract_numeric(normalized_value),
+                        }
+                    )
+            # successfully processed; exit loop
+            break
+        except urllib.error.URLError as exc:  # pragma: no cover - network error logging
+            last_error = exc
+            dataset.clear()
+            if ctx is None:
+                print(f"Warning: SSL verification failed while fetching dataset ({exc}); retrying without verification.")
+            continue
 
-        _DATASET_CACHE = dataset
-        _DATASET_MAP = {entry["id"]: entry for entry in dataset}
-        return dataset
-
-
-def get_question_by_id(question_id: str) -> dict | None:
-    dataset = load_dataset()
-    if not _DATASET_MAP:
-        # ensure map is built if cache was reset
-        for entry in dataset:
-            _DATASET_MAP.setdefault(entry["id"], entry)
-    return _DATASET_MAP.get(question_id)
+    if not dataset:
+        raise RuntimeError(f"Failed to fetch GSM8K dataset: {last_error}") from last_error
+    return dataset
 
 
 class ThreadingHTTPServer(ThreadingMixIn, http.server.HTTPServer):
@@ -122,8 +135,8 @@ class StaticHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path.startswith("/api/"):
-            self._handle_api(parsed)
+        if parsed.path == DATASET_ROUTE:
+            self._serve_dataset()
             return
         super().do_GET()
 
@@ -157,88 +170,25 @@ class StaticHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         return FALLBACK_FILE.open("rb")
 
-    # API helpers ---------------------------------------------------------
-    def _handle_api(self, parsed: urllib.parse.ParseResult) -> None:
+    def _serve_dataset(self) -> None:
         try:
-            if parsed.path == "/api/questions":
-                self._handle_questions(parsed.query)
-            elif parsed.path == "/api/questions/all":
-                self._handle_questions_all()
-            elif parsed.path == "/api/questions/random":
-                self._handle_question_random()
-            elif parsed.path.startswith("/api/questions/"):
-                question_id = parsed.path.rsplit("/", 1)[-1]
-                self._handle_question_detail(question_id)
-            else:
-                self.send_error(404, "Unknown API endpoint")
-        except FileNotFoundError as exc:
-            self._write_json({"error": str(exc)}, status=500)
-        except Exception as exc:  # noqa: BLE001 - log unexpected errors
-            self.send_error(500, f"Server error: {exc}")
-
-    def _handle_questions(self, query: str) -> None:
-        params = urllib.parse.parse_qs(query or "")
-        page_raw = params.get("page", ["1"])[0]
-        page_size_raw = params.get("page_size", ["12"])[0]
-        try:
-            page = int(page_raw or 1)
-        except ValueError:
-            page = 1
-        try:
-            page_size = int(page_size_raw or 12)
-        except ValueError:
-            page_size = 12
-        page = max(1, page)
-        page_size = max(1, min(50, page_size))
-
-        dataset = load_dataset()
-        total = len(dataset)
-        total_pages = (total + page_size - 1) // page_size if total else 0
-
-        if total_pages == 0:
-            payload = {"page": 0, "pageSize": page_size, "total": 0, "totalPages": 0, "items": []}
-            self._write_json(payload)
+            dataset_path = ensure_dataset_file()
+        except RuntimeError as exc:
+            self.send_error(500, str(exc))
             return
 
-        page = min(page, total_pages)
-        start = (page - 1) * page_size
-        items = dataset[start : start + page_size]
-        payload = {
-            "page": page,
-            "pageSize": page_size,
-            "total": total,
-            "totalPages": total_pages,
-            "items": [
-                {"id": entry["id"], "position": entry["position"], "question": entry["question"]} for entry in items
-            ],
-        }
-        self._write_json(payload)
-
-    def _handle_questions_all(self) -> None:
-        dataset = load_dataset()
-        self._write_json(dataset)
-
-    def _handle_question_random(self) -> None:
-        dataset = load_dataset()
-        if not dataset:
-            self._write_json({"error": "No questions available"}, status=404)
+        try:
+            with dataset_path.open("rb") as handle:
+                data = handle.read()
+        except OSError as exc:
+            self.send_error(500, f"Unable to read dataset: {exc}")
             return
-        self._write_json(random.choice(dataset))
 
-    def _handle_question_detail(self, question_id: str) -> None:
-        question = get_question_by_id(question_id)
-        if question is None:
-            self._write_json({"error": "Question not found"}, status=404)
-            return
-        self._write_json(question)
-
-    def _write_json(self, payload: object, status: int = 200) -> None:
-        body = json.dumps(payload).encode("utf-8")
-        self.send_response(status)
+        self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(len(data)))
         self.end_headers()
-        self.wfile.write(body)
+        self.wfile.write(data)
 
 
 def parse_args() -> argparse.Namespace:
@@ -250,6 +200,11 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     if not PUBLIC_DIR.exists():
         raise SystemExit(f"Public directory not found: {PUBLIC_DIR}")
+
+    try:
+        ensure_dataset_file()
+    except RuntimeError as exc:
+        print(f"Warning: {exc}")
 
     args = parse_args()
     server_address = ("", args.port)

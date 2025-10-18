@@ -1,15 +1,34 @@
+import QUESTIONS_DATA from './data/questions_gsm8k.js';
+
 const STORAGE_KEY = 'math-quest-progress-v1';
-const DATASET_ENDPOINT = '/api/questions/all';
 let QUESTIONS = [];
 let QUESTION_MAP = new Map(QUESTIONS.map((q) => [q.id, q]));
 
 const elements = {};
+const rootElement = document.documentElement;
+const isIphoneExperience = rootElement.classList.contains('is-iphone');
+
+function setMobileBrowserOpen(open) {
+  if (!isIphoneExperience) {
+    return;
+  }
+  const shouldOpen = Boolean(open);
+  rootElement.classList.toggle('browser-open', shouldOpen);
+  if (elements.mobileBrowserToggle) {
+    elements.mobileBrowserToggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+  }
+  if (elements.mobileBrowserScrim) {
+    elements.mobileBrowserScrim.hidden = !shouldOpen;
+  }
+}
 
 const state = loadState();
+const narration = createNarrationState();
 let currentQuestion = null;
 const recentlyAsked = [];
 const browserState = { page: 1, pageSize: 8 };
 let audioController = null;
+let consecutiveCorrect = 0;
 
 if (document.readyState === 'loading') {
   window.addEventListener('DOMContentLoaded', () => {
@@ -28,10 +47,12 @@ async function init() {
   elements.questionMode = document.getElementById('question-mode');
   elements.answerForm = document.getElementById('answer-form');
   elements.answerInput = document.getElementById('answer-input');
+  elements.hintButton = document.getElementById('hint-button');
   elements.checkButton = document.getElementById('check-button');
   elements.skipButton = document.getElementById('skip-button');
   elements.optionsContainer = document.getElementById('options-container');
   elements.feedback = document.getElementById('feedback');
+  elements.speakButton = document.getElementById('speak-toggle-button');
   elements.historyList = document.getElementById('history-list');
   elements.reviewToggle = document.getElementById('review-toggle');
   elements.questionList = document.getElementById('question-list');
@@ -45,6 +66,9 @@ async function init() {
     best: document.getElementById('stat-best'),
   };
   elements.confettiLayer = document.getElementById('confetti-layer');
+  elements.mobileBrowserToggle = document.getElementById('mobile-browser-toggle');
+  elements.mobileBrowserClose = document.getElementById('mobile-browser-close');
+  elements.mobileBrowserScrim = document.getElementById('mobile-browser-scrim');
 
   if (!elements.answerForm || !elements.questionText) {
     // DOM did not load correctly; bail early.
@@ -60,6 +84,28 @@ async function init() {
     elements.questionList.innerHTML = '<li class="browser__empty">Loading questions…</li>';
   }
   elements.questionMode.textContent = 'Loading…';
+
+  if (isIphoneExperience) {
+    if (elements.mobileBrowserToggle) {
+      elements.mobileBrowserToggle.addEventListener('click', () => {
+        const shouldOpen = !rootElement.classList.contains('browser-open');
+        setMobileBrowserOpen(shouldOpen);
+      });
+      elements.mobileBrowserToggle.setAttribute('aria-expanded', 'false');
+    }
+    if (elements.mobileBrowserClose) {
+      elements.mobileBrowserClose.addEventListener('click', () => setMobileBrowserOpen(false));
+    }
+    if (elements.mobileBrowserScrim) {
+      elements.mobileBrowserScrim.addEventListener('click', () => setMobileBrowserOpen(false));
+      elements.mobileBrowserScrim.hidden = true;
+    }
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        setMobileBrowserOpen(false);
+      }
+    });
+  }
 
   await ensureQuestionsReady();
   if (!QUESTIONS.length) {
@@ -89,8 +135,59 @@ async function init() {
     loadNextQuestion(true);
   });
 
+  // Wire clear history button if present
+  elements.clearHistoryButton = document.getElementById('clear-history-button');
+  if (elements.clearHistoryButton) {
+    elements.clearHistoryButton.addEventListener('click', () => {
+      if (confirm('Clear recent history? This cannot be undone.')) {
+        clearHistory();
+      }
+    });
+  }
+
   elements.answerForm.addEventListener('submit', onSubmit);
-  elements.skipButton.addEventListener('click', () => loadNextQuestion(true));
+  elements.skipButton.addEventListener('click', () => {
+    // skipping should reset consecutive correct counter
+    consecutiveCorrect = 0;
+    loadNextQuestion(true);
+  });
+
+  if (elements.speakButton) {
+    if (!narration.supported) {
+      elements.speakButton.disabled = true;
+      elements.speakButton.innerHTML = '<span aria-hidden="true">🔇</span> Narration unavailable';
+      elements.speakButton.setAttribute('aria-pressed', 'false');
+    } else {
+      elements.speakButton.innerHTML = '<span aria-hidden="true">🔊</span> Read aloud';
+      elements.speakButton.addEventListener('click', onNarrationToggle);
+    }
+  }
+
+  if (elements.hintButton) {
+    elements.hintButton.addEventListener('click', () => {
+      if (!currentQuestion) return;
+      // show the full explanatory answer (not just the final number)
+      const full = String(currentQuestion.answer ?? '');
+      // remove trailing '#### 123' final line if present
+      const cleaned = full.replace(/\n?####\s*[-+]?\d+(?:\.\d+)?\s*$/, '').trim();
+      // escape HTML and preserve newlines for safe display
+      const escapeHtml = (str) => str.replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[ch]));
+      const rendered = escapeHtml(cleaned).replace(/\n/g, '<br>');
+      elements.feedback.innerHTML = `Hint: <span class="hint-body">${rendered}</span>`;
+      elements.feedback.className = 'feedback feedback--hint';
+      // leave the hint visible a bit longer so the user can read the steps
+      setTimeout(() => {
+        elements.feedback.textContent = '';
+        elements.feedback.className = 'feedback';
+      }, 5000);
+    });
+  }
   elements.answerInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       elements.answerForm.requestSubmit();
@@ -100,6 +197,7 @@ async function init() {
   updateStats();
   renderHistory();
   renderQuestionList();
+  updateNarrationControls();
   loadNextQuestion();
 }
 
@@ -120,7 +218,10 @@ function onSubmit(event) {
   const normalizedUser = normalizeAnswer(userInput);
 
   const correctNumeric = typeof currentQuestion.answerNumeric === 'number' ? currentQuestion.answerNumeric : null;
-  const normalizedTarget = normalizeAnswer(currentQuestion.answer);
+  const targetAnswer = typeof currentQuestion.answerValue === 'string' && currentQuestion.answerValue
+    ? currentQuestion.answerValue
+    : currentQuestion.answer ?? '';
+  const normalizedTarget = normalizeAnswer(targetAnswer);
 
   const numericMatch = correctNumeric !== null && userNumeric !== null
     ? areNumbersEqual(userNumeric, correctNumeric)
@@ -129,16 +230,22 @@ function onSubmit(event) {
   const isCorrect = numericMatch || stringMatch;
 
   const { revealAnswer } = registerAttempt(currentQuestion, userInput, isCorrect);
-  provideFeedback(isCorrect, currentQuestion.answer, revealAnswer);
+  provideFeedback(isCorrect, targetAnswer, revealAnswer);
 
   if (isCorrect) {
     spawnConfetti();
     playCelebrationSound().catch((error) => {
       console.warn('Celebration audio failed', error);
     });
+    // track consecutive correct answers
+    consecutiveCorrect += 1;
+    // show hamster starting at 4 correct answers, growing 10% larger with each additional correct
+    showHamster(consecutiveCorrect);
     window.setTimeout(() => loadNextQuestion(), 550);
   } else {
     elements.answerInput.select();
+    // reset streak-on-success counter when incorrect
+    consecutiveCorrect = 0;
   }
 }
 
@@ -177,19 +284,34 @@ function registerAttempt(question, userInput, isCorrect) {
   const revealAnswer = !isCorrect && (progress.misses ?? 0) >= 2;
 
   const historyEntry = {
-    id: `${question.id}-${progress.attempts}`,
     questionId: question.id,
     question: question.question,
     userAnswer: userInput,
-    correctAnswer: question.answer,
+    correctAnswer: question.answerValue ?? question.answer,
     correct: isCorrect,
+    attempts: 1,
     timestamp: Date.now(),
     revealAnswer,
   };
 
+  const existingIndex = state.history.findIndex((entry) => entry.questionId === question.id);
+  if (existingIndex >= 0) {
+    const existing = state.history.splice(existingIndex, 1)[0];
+    historyEntry.attempts = (existing.attempts ?? 1) + 1;
+    historyEntry.timestamp = Date.now();
+    historyEntry.revealAnswer = revealAnswer;
+    historyEntry.correct = isCorrect;
+    historyEntry.userAnswer = userInput;
+    historyEntry.correctAnswer = question.answerValue ?? question.answer;
+    historyEntry.id = existing.id ?? question.id;
+  } else {
+    historyEntry.id = question.id;
+  }
+
   state.history.unshift(historyEntry);
-  if (state.history.length > 12) {
-    state.history.length = 12;
+  // keep only the most recent 15 entries
+  if (state.history.length > 15) {
+    state.history.length = 15;
   }
 
   persistState();
@@ -203,11 +325,16 @@ function provideFeedback(isCorrect, correctAnswer, revealAnswer = false) {
   if (isCorrect) {
     elements.feedback.textContent = 'Nice work! You nailed it.';
     elements.feedback.className = 'feedback feedback--success';
+    // play success sound (handled elsewhere) -- keep synth call in onSubmit
   } else {
     elements.feedback.textContent = revealAnswer
       ? `Not yet. Here's the answer: ${correctAnswer}`
       : 'Not yet. Check your work and try again.';
     elements.feedback.className = 'feedback feedback--error';
+    // play a failure sound to indicate incorrect answer
+    playFailSound().catch((err) => {
+      // ignore playback errors
+    });
   }
 }
 
@@ -222,6 +349,8 @@ function loadNextQuestion(force = false) {
     elements.answerInput.disabled = true;
     elements.checkButton.disabled = true;
     elements.skipButton.disabled = true;
+    stopNarration();
+    updateNarrationControls();
     return;
   }
 
@@ -233,10 +362,34 @@ function loadNextQuestion(force = false) {
     elements.skipButton.disabled = true;
     elements.questionMode.textContent = 'All Done';
     elements.optionsContainer.hidden = true;
+    stopNarration();
+    updateNarrationControls();
     return;
   }
 
   setQuestion(nextQuestion, 'auto');
+}
+
+// show a temporary hamster overlay with growing size
+function showHamster(consecutiveCount = 1) {
+  const layer = document.getElementById('hamster-layer');
+  const emoji = document.getElementById('hamster-emoji');
+  if (!layer || !emoji) return;
+  
+  // remove any existing size classes
+  emoji.className = 'hamster-emoji';
+  
+  // Only show hamster after 4 consecutive correct answers
+  if (consecutiveCount >= 4) {
+    // Calculate size class (starts at 1 for 30%, increases by 1 for each additional correct answer)
+    // Cap at size-7 (90% window)
+    const sizeClass = Math.min(consecutiveCount - 3, 7);
+    emoji.classList.add(`hamster-emoji--size-${sizeClass}`);
+    
+    layer.classList.add('show');
+    // remove after 2s so it remains large long enough
+    setTimeout(() => layer.classList.remove('show'), 2000);
+  }
 }
 
 function pickQuestion() {
@@ -279,18 +432,16 @@ async function ensureQuestionsReady() {
   }
 
   try {
-    const response = await fetch(DATASET_ENDPOINT, { cache: 'no-store' });
-    if (response.ok) {
-      const data = await response.json();
-      if (Array.isArray(data) && data.length) {
-        QUESTIONS = normalizeQuestions(data);
-        QUESTION_MAP = new Map(QUESTIONS.map((q) => [q.id, q]));
-        browserState.page = 1;
-        return;
-      }
+    const rawDataset = Array.isArray(QUESTIONS_DATA) ? QUESTIONS_DATA : [];
+    if (!Array.isArray(rawDataset) || !rawDataset.length) {
+      throw new Error('Dataset is empty or malformed.');
     }
+    QUESTIONS = normalizeQuestions(rawDataset);
+    QUESTION_MAP = new Map(QUESTIONS.map((q) => [q.id, q]));
+    browserState.page = 1;
+    return;
   } catch (error) {
-    console.error('Dataset API unavailable.', error);
+    console.error('Dataset initialization failed', error);
   }
 
   QUESTIONS = [];
@@ -378,6 +529,7 @@ function updatePagination(page, totalPages) {
 }
 
 function setQuestion(question, source) {
+  stopNarration({ silent: true });
   currentQuestion = question;
   rememberQuestion(question.id);
 
@@ -405,9 +557,13 @@ function setQuestion(question, source) {
     modeLabel = 'Review Round';
   }
   elements.questionMode.textContent = modeLabel;
+  if (isIphoneExperience && source === 'manual') {
+    setMobileBrowserOpen(false);
+  }
 
   renderChoices(question);
   renderQuestionList();
+  updateNarrationControls();
 }
 
 function rememberQuestion(questionId) {
@@ -423,6 +579,141 @@ function getQuestionPreview(text) {
     return `${compact.slice(0, 137)}…`;
   }
   return compact || 'Untitled question';
+}
+
+function onNarrationToggle() {
+  if (!narration.supported) {
+    return;
+  }
+  if (!currentQuestion || !currentQuestion.question) {
+    return;
+  }
+  if (!narration.playing) {
+    startNarration(currentQuestion.question);
+    return;
+  }
+  if (narration.paused) {
+    resumeNarration();
+  } else {
+    pauseNarration();
+  }
+}
+
+function startNarration(text) {
+  if (!narration.supported || !text) {
+    return;
+  }
+  stopNarration({ silent: true });
+  const utterance = new SpeechSynthesisUtterance(text);
+  if (narration.voice) {
+    utterance.voice = narration.voice;
+    if (narration.voice.lang) {
+      utterance.lang = narration.voice.lang;
+    }
+  } else {
+    utterance.lang = 'en-US';
+  }
+  utterance.rate = 0.95;
+  utterance.pitch = 1.02;
+  utterance.volume = 1;
+  const handleComplete = () => {
+    if (narration.utterance !== utterance) {
+      return;
+    }
+    narration.playing = false;
+    narration.paused = false;
+    narration.utterance = null;
+    updateNarrationControls();
+  };
+  utterance.onend = handleComplete;
+  utterance.onerror = handleComplete;
+  narration.utterance = utterance;
+  narration.playing = true;
+  narration.paused = false;
+  try {
+    window.speechSynthesis.speak(utterance);
+  } catch (error) {
+    narration.playing = false;
+    narration.utterance = null;
+    console.warn('Narration failed to start', error);
+  }
+  updateNarrationControls();
+}
+
+function pauseNarration() {
+  if (!narration.supported || !narration.playing || narration.paused) {
+    return;
+  }
+  try {
+    window.speechSynthesis.pause();
+    narration.paused = true;
+  } catch (error) {
+    console.warn('Narration pause failed', error);
+  }
+  updateNarrationControls();
+}
+
+function resumeNarration() {
+  if (!narration.supported || !narration.playing || !narration.paused) {
+    return;
+  }
+  try {
+    window.speechSynthesis.resume();
+    narration.paused = false;
+  } catch (error) {
+    console.warn('Narration resume failed', error);
+  }
+  updateNarrationControls();
+}
+
+function stopNarration(options = {}) {
+  if (!narration.supported) {
+    return;
+  }
+  if (narration.playing || narration.paused) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch (error) {
+      console.warn('Narration cancel failed', error);
+    }
+  }
+  narration.playing = false;
+  narration.paused = false;
+  narration.utterance = null;
+  if (!options.silent) {
+    updateNarrationControls();
+  }
+}
+
+function updateNarrationControls() {
+  const speakButton = elements.speakButton;
+  if (!speakButton) {
+    return;
+  }
+
+  if (!narration.supported) {
+    speakButton.disabled = true;
+    speakButton.innerHTML = '<span aria-hidden="true">🔇</span> Narration unavailable';
+    speakButton.setAttribute('aria-pressed', 'false');
+    return;
+  }
+
+  const hasQuestion = Boolean(currentQuestion && currentQuestion.question);
+  const isPlaying = narration.playing && !narration.paused;
+  const isPaused = narration.playing && narration.paused;
+
+  speakButton.disabled = !hasQuestion;
+  let speakLabel = 'Read aloud';
+  let speakIcon = '🔊';
+  if (isPlaying) {
+    speakLabel = 'Pause reading';
+    speakIcon = '⏸️';
+  } else if (isPaused) {
+    speakLabel = 'Resume reading';
+    speakIcon = '▶️';
+  }
+  speakButton.innerHTML = `<span aria-hidden="true">${speakIcon}</span> ${speakLabel}`;
+  speakButton.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
 }
 
 
@@ -444,8 +735,12 @@ function renderChoices(question) {
     button.className = 'choice';
     button.textContent = option;
     button.addEventListener('click', () => {
+      // clear selected state on other choices
+      Array.from(container.querySelectorAll('.choice')).forEach((el) => el.classList.remove('choice--selected'));
+      button.classList.add('choice--selected');
       elements.answerInput.value = option;
-      elements.answerInput.focus();
+      // move focus to Check button for quick keyboard use
+      elements.checkButton.focus();
     });
     container.appendChild(button);
   });
@@ -501,9 +796,18 @@ function renderHistory() {
     return;
   }
 
+  // render most recent first (state.history is already newest-first)
   state.history.forEach((entry) => {
     const item = document.createElement('li');
-    item.className = `history__item${entry.correct ? '' : ' history__item--error'}`;
+    const attemptCount = Math.max(1, entry.attempts ?? 1);
+    const wasRetry = entry.correct && attemptCount > 1;
+    let itemClass = 'history__item';
+    if (entry.correct) {
+      itemClass = wasRetry ? 'history__item history__item--warn' : 'history__item';
+    } else {
+      itemClass = 'history__item history__item--error';
+    }
+    item.className = itemClass;
 
     const question = document.createElement('p');
     question.className = 'history__question';
@@ -512,15 +816,31 @@ function renderHistory() {
     const result = document.createElement('span');
     result.className = 'history__result';
     const showAnswer = entry.correct || entry.revealAnswer === true || !('revealAnswer' in entry);
+    const attemptNote = attemptCount > 1 ? ` (Attempt ${attemptCount})` : '';
     result.textContent = entry.correct
-      ? `✅ Answered ${entry.userAnswer}`
+      ? wasRetry
+        ? `⚠️ Answered ${entry.userAnswer}${attemptNote}`
+        : `✅ Answered ${entry.userAnswer}${attemptNote}`
       : showAnswer
-        ? `❌ You wrote ${entry.userAnswer} • Correct answer ${entry.correctAnswer}`
-        : `❌ You wrote ${entry.userAnswer} • Keep practicing!`;
+        ? `❌ You wrote ${entry.userAnswer}${attemptNote} • Correct answer ${entry.correctAnswer}`
+        : `❌ You wrote ${entry.userAnswer}${attemptNote} • Keep practicing!`;
 
     item.append(question, result);
     list.appendChild(item);
   });
+}
+
+function clearHistory() {
+  // Reset everything: stats, progress, incorrect set and history
+  state.history = [];
+  state.progress = {};
+  state.incorrect = new Set();
+  state.stats = { solved: 0, attempts: 0, streak: 0, best: 0 };
+  state.focusReview = false;
+  persistState();
+  renderHistory();
+  renderQuestionList();
+  updateStats();
 }
 
 function spawnConfetti() {
@@ -561,7 +881,46 @@ async function playCelebrationSound() {
     audioController = createAudioController();
   }
   await audioController.resume();
+  // Prefer playing a bundled success.mp3 if present (easier to control, can be replaced by the user)
+  try {
+    // quick HEAD to check presence
+    const resp = await fetch('./data/success.mp3', { method: 'HEAD', cache: 'no-store' });
+    if (resp.ok) {
+      const a = new Audio('./data/success.mp3');
+      a.volume = 0.9;
+      await a.play();
+      return;
+    }
+  } catch (err) {
+    // ignore and fall back to synth
+  }
+
+  // fallback to synth chord
   audioController.playChord([523.25, 659.25, 783.99]);
+}
+
+async function playFailSound() {
+  // prefer fail.mp3 if present, otherwise synth a short dissonant sting
+  try {
+    const resp = await fetch('./data/fail.mp3', { method: 'HEAD', cache: 'no-store' });
+    if (resp.ok) {
+      const a = new Audio('./data/fail.mp3');
+      a.volume = 0.9;
+      await a.play();
+      return;
+    }
+  } catch (err) {
+    // fall back
+  }
+
+  // short dissonant synth
+  if (!audioController) {
+    audioController = createAudioController();
+  }
+  await audioController.resume();
+  // play a quick minor-second cluster
+  const base = 220.0;
+  audioController.playChord([base, base * Math.pow(2, 1 / 12)]);
 }
 
 function createAudioController() {
@@ -583,18 +942,58 @@ function createAudioController() {
 
   function playChord(frequencies) {
     const now = context.currentTime;
-    const duration = 0.45;
+    const duration = 0.5; // celebration duration (0.5 seconds)
+    const attack = 0.02;
+    const sustainLevel = 0.22;
+    const release = 0.08;
+
+    // master nodes
+    const masterGain = context.createGain();
+    masterGain.gain.setValueAtTime(1, now);
+    const lowpass = context.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.setValueAtTime(7000, now);
+    lowpass.Q.setValueAtTime(0.7, now);
+
+    masterGain.connect(lowpass).connect(context.destination);
+
+    // For each frequency, create two slightly detuned voices (sine + saw)
     frequencies.forEach((frequency, index) => {
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      oscillator.frequency.value = frequency;
-      oscillator.type = index % 2 === 0 ? 'sine' : 'triangle';
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.2, now + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-      oscillator.connect(gain).connect(context.destination);
-      oscillator.start(now);
-      oscillator.stop(now + duration + 0.02);
+      const detuneCents = index % 2 === 0 ? 8 : -8; // alternate detune
+      const pan = (index - (frequencies.length - 1) / 2) / (frequencies.length); // spread across stereo
+
+      const voiceGain = context.createGain();
+      const panner = context.createStereoPanner();
+      panner.pan.setValueAtTime(pan, now);
+      voiceGain.connect(panner).connect(masterGain);
+
+      // Sine voice (clean)
+      const osc1 = context.createOscillator();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(frequency, now);
+      osc1.detune.setValueAtTime(detuneCents, now);
+
+      // Saw voice (body)
+      const osc2 = context.createOscillator();
+      osc2.type = 'sawtooth';
+      osc2.frequency.setValueAtTime(frequency, now);
+      osc2.detune.setValueAtTime(-detuneCents, now);
+
+      // per-voice gain envelope
+      const g = context.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(sustainLevel, now + attack);
+      g.gain.setValueAtTime(sustainLevel, now + duration - release);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + duration + 0.01);
+
+      osc1.connect(g);
+      osc2.connect(g);
+      g.connect(voiceGain);
+
+      osc1.start(now);
+      osc2.start(now + 0.005 * Math.random()); // slight phasing
+      osc1.stop(now + duration + 0.02);
+      osc2.stop(now + duration + 0.02);
     });
   }
 
@@ -633,17 +1032,21 @@ function formatNumber(value) {
 }
 
 function loadState() {
+  const defaults = defaultState();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return defaultState();
+      return defaults;
     }
     const parsed = JSON.parse(raw);
     parsed.incorrect = new Set(parsed.incorrect ?? []);
     parsed.progress = parsed.progress ?? {};
-    parsed.stats = { ...defaultState().stats, ...parsed.stats };
+    parsed.stats = { ...defaults.stats, ...parsed.stats };
     parsed.history = parsed.history ?? [];
     parsed.focusReview = Boolean(parsed.focusReview);
+    if (parsed.settings) {
+      delete parsed.settings;
+    }
     Object.values(parsed.progress).forEach((record) => {
       if (!record || typeof record !== 'object') {
         return;
@@ -655,7 +1058,7 @@ function loadState() {
     return parsed;
   } catch (error) {
     console.error('Failed to load saved state', error);
-    return defaultState();
+    return defaults;
   }
 }
 
@@ -664,7 +1067,102 @@ function persistState() {
     ...state,
     incorrect: Array.from(state.incorrect),
   };
+  delete toPersist.settings;
+  // ensure we don't persist more than 20 recent history entries
+  if (Array.isArray(toPersist.history) && toPersist.history.length > 20) {
+    toPersist.history = toPersist.history.slice(0, 20);
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(toPersist));
+}
+
+function createNarrationState() {
+  const hasWindow = typeof window !== 'undefined';
+  const supported = hasWindow
+    && 'speechSynthesis' in window
+    && typeof window.SpeechSynthesisUtterance === 'function';
+  const state = {
+    supported,
+    playing: false,
+    paused: false,
+    utterance: null,
+    voice: null,
+  };
+
+  if (!supported) {
+    return state;
+  }
+
+  const synth = window.speechSynthesis;
+  const refreshVoice = () => {
+    const available = synth.getVoices();
+    if (!available.length) {
+      return;
+    }
+    const chosen = selectPreferredVoice(available);
+    if (chosen) {
+      state.voice = chosen;
+    }
+  };
+
+  refreshVoice();
+  if (typeof synth.addEventListener === 'function') {
+    synth.addEventListener('voiceschanged', refreshVoice);
+  } else {
+    const existingHandler = synth.onvoiceschanged;
+    synth.onvoiceschanged = (...args) => {
+      refreshVoice();
+      if (typeof existingHandler === 'function') {
+        existingHandler.apply(synth, args);
+      }
+    };
+  }
+
+  return state;
+}
+
+function selectPreferredVoice(voices) {
+  if (!Array.isArray(voices) || !voices.length) {
+    return null;
+  }
+
+  const languagePriority = ['en-us', 'en-gb', 'en-au', 'en-ca', 'en'];
+  const namePriority = [
+    'natural',
+    'neural',
+    'wavenet',
+    'premium',
+    'google us english',
+    'google uk english',
+    'microsoft aria',
+    'microsoft guy',
+    'microsoft jenny',
+  ];
+
+  const normalized = voices.map((voice) => ({
+    voice,
+    lang: (voice.lang || '').toLowerCase(),
+    name: (voice.name || '').toLowerCase(),
+  }));
+
+  const languageMatches = normalized.filter((entry) => languagePriority.some(
+    (prefix) => entry.lang.startsWith(prefix),
+  ));
+  const candidatePool = languageMatches.length ? languageMatches : normalized;
+
+  const preferredByName = namePriority
+    .map((keyword) => candidatePool.find((entry) => entry.name.includes(keyword)))
+    .find(Boolean);
+  if (preferredByName) {
+    return preferredByName.voice;
+  }
+
+  const defaultVoice = candidatePool.find((entry) => entry.voice.default)
+    || normalized.find((entry) => entry.voice.default);
+  if (defaultVoice) {
+    return defaultVoice.voice;
+  }
+
+  return candidatePool[0]?.voice ?? voices[0] ?? null;
 }
 
 function defaultState() {
@@ -684,20 +1182,41 @@ function defaultState() {
 
 function normalizeQuestions(collection) {
   return collection
-    .filter((item) => item && item.question && item.answer)
+    .filter((item) => item && item.question && (item.answer || item.answerValue))
     .map((item, index) => {
       const questionText = typeof item.question === 'string'
         ? item.question.trim()
         : String(item.question ?? '');
-      const answerValue = typeof item.answer === 'string' ? item.answer : String(item.answer ?? '');
+
+      const rawFullAnswer = typeof item.answer === 'string'
+        ? item.answer
+        : typeof item.answerValue === 'string'
+          ? item.answerValue
+          : '';
+      const fullAnswer = rawFullAnswer ? rawFullAnswer.trim() : '';
+
+      let finalAnswer;
+      if (typeof item.answerValue === 'string' && item.answerValue.trim()) {
+        finalAnswer = item.answerValue.trim();
+      } else if (fullAnswer.includes('####')) {
+        finalAnswer = fullAnswer.split('####').pop().trim();
+      } else if (fullAnswer) {
+        const lines = fullAnswer.split('\n');
+        finalAnswer = lines[lines.length - 1].trim();
+      } else {
+        finalAnswer = '';
+      }
+
       const answerNumeric = typeof item.answerNumeric === 'number'
         ? item.answerNumeric
-        : parseNumeric(answerValue);
+        : parseNumeric(finalAnswer);
+
       return {
         ...item,
         id: item.id ?? item.question_id ?? `q${index}`,
         question: questionText,
-        answer: answerValue,
+        answer: fullAnswer,
+        answerValue: finalAnswer,
         position: typeof item.position === 'number' ? item.position : index + 1,
         answerNumeric,
       };

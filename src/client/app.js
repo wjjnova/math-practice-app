@@ -1,12 +1,213 @@
-import QUESTIONS_DATA from './data/questions_gsm8k.js';
+import QUESTIONS_DATA_EN from './data/questions_gsm8k.js';
+import QUESTIONS_DATA_ZH from './data/questions_gsm8k_zh.js';
 
 const STORAGE_KEY = 'math-quest-progress-v1';
-let QUESTIONS = [];
-let QUESTION_MAP = new Map(QUESTIONS.map((q) => [q.id, q]));
-
 const elements = {};
 const rootElement = document.documentElement;
 const isIphoneExperience = rootElement.classList.contains('is-iphone');
+
+const SUPPORTED_LOCALES = ['en', 'zh'];
+const DEFAULT_LOCALE = 'en';
+
+const TRANSLATIONS = {
+  en: {
+    documentTitle: 'Math Quest — GSM8K',
+    appTitle: 'Math Quest — GSM8K',
+    tagline: 'Master word problems one win at a time.',
+    scoreboard: {
+      ariaLabel: 'Progress',
+      solved: 'Solved',
+      attempts: 'Attempts',
+      streak: 'Streak',
+      best: 'Best Streak',
+    },
+    badge: {
+      loading: 'Loading…',
+    },
+    action: {
+      browseQuestions: 'Browse Questions',
+      checkAnswer: 'Check Answer',
+      skip: 'Skip',
+      readAloud: 'Read aloud',
+      readAloudUnavailable: 'Narration unavailable',
+      readAloudPause: 'Pause reading',
+      readAloudResume: 'Resume reading',
+      hint: 'Hint',
+      prevPage: 'Previous',
+      nextPage: 'Next',
+      clearHistory: 'Clear history',
+      closeBrowser: 'Close question browser',
+    },
+    form: {
+      answerLabel: 'Your answer',
+      answerPlaceholder: 'Choose an option',
+    },
+    question: {
+      loading: 'Loading questions…',
+      failedLoad: 'Failed to load questions. Refresh or serve the app via localhost.',
+      noQuestions: 'No questions available.',
+      masteredAll: 'Every question is mastered. Fantastic job!',
+      unavailable: 'Unavailable',
+      untitled: 'Untitled question',
+    },
+    browser: {
+      ariaLabel: 'Browse questions',
+      title: 'Browse Questions',
+      loading: 'Loading questions…',
+      error: 'Questions could not be loaded.',
+      emptyAll: 'No questions available.',
+      emptyPage: 'No questions on this page.',
+      itemMeta: '#{number} • {status}',
+    },
+    history: {
+      ariaLabel: 'Recent activity',
+      title: 'Recent Turns',
+      empty: 'Your progress log will appear here.',
+      answered: '✅ Answered {answer}{attempt}',
+      answeredRetry: '⚠️ Answered {answer}{attempt}',
+      incorrectReveal: '❌ You wrote {answer}{attempt} • Correct answer {correct}',
+      incorrectKeep: '❌ You wrote {answer}{attempt} • Keep practicing!',
+      attempt: ' (Attempt {count})',
+    },
+    toggle: {
+      focusReview: 'Focus on missed questions',
+    },
+    feedback: {
+      enterAnswer: 'Type an answer before checking.',
+      correct: 'Nice work! You nailed it.',
+      incorrect: 'Not yet. Check your work and try again.',
+      reveal: "Not yet. Here's the answer: {answer}",
+      hintPrefix: 'Hint:',
+    },
+    mode: {
+      loading: 'Loading…',
+      newChallenge: 'New Challenge',
+      pickedByYou: 'Picked by You',
+      reviewRound: 'Review Round',
+      allDone: 'All Done',
+      unavailable: 'Unavailable',
+    },
+    statusLabel: {
+      mastered: 'Mastered',
+      needsReview: 'Needs review',
+      fresh: 'Fresh',
+    },
+    pagination: {
+      page: 'Page {page} / {total}',
+      empty: 'Page 0',
+    },
+    confirm: {
+      clearHistory: 'Clear recent history? This cannot be undone.',
+    },
+    language: {
+      toggleLabel: '🌐 中文',
+      toggleAria: 'Switch language to Chinese',
+    },
+  },
+  zh: {
+    documentTitle: '数学探险 — GSM8K',
+    appTitle: '数学探险 — GSM8K',
+    tagline: '一次一个题目，攻克所有应用题。',
+    scoreboard: {
+      ariaLabel: '进度',
+      solved: '已解',
+      attempts: '尝试',
+      streak: '连胜',
+      best: '最佳连胜',
+    },
+    badge: {
+      loading: '载入中…',
+    },
+    action: {
+      browseQuestions: '浏览题目',
+      checkAnswer: '提交答案',
+      skip: '跳过',
+      readAloud: '朗读题目',
+      readAloudUnavailable: '当前设备不支持朗读',
+      readAloudPause: '暂停朗读',
+      readAloudResume: '继续朗读',
+      hint: '提示',
+      prevPage: '上一页',
+      nextPage: '下一页',
+      clearHistory: '清除记录',
+      closeBrowser: '关闭题目列表',
+    },
+    form: {
+      answerLabel: '你的答案',
+      answerPlaceholder: '请选择一个选项',
+    },
+    question: {
+      loading: '题目载入中…',
+      failedLoad: '题目加载失败，请刷新或通过本地服务器访问。',
+      noQuestions: '暂无题目。',
+      masteredAll: '所有题目都掌握了，太棒了！',
+      unavailable: '不可用',
+      untitled: '未命名题目',
+    },
+    browser: {
+      ariaLabel: '浏览题目',
+      title: '浏览题目',
+      loading: '题目载入中…',
+      error: '无法加载题目。',
+      emptyAll: '暂无可用题目。',
+      emptyPage: '本页暂无题目。',
+      itemMeta: '第{number}题 • {status}',
+    },
+    history: {
+      ariaLabel: '近期活动',
+      title: '最近记录',
+      empty: '这里会显示你的练习记录。',
+      answered: '✅ 作答 {answer}{attempt}',
+      answeredRetry: '⚠️ 作答 {answer}{attempt}',
+      incorrectReveal: '❌ 你输入了 {answer}{attempt} • 正确答案 {correct}',
+      incorrectKeep: '❌ 你输入了 {answer}{attempt} • 继续加油！',
+      attempt: '（第{count}次尝试）',
+    },
+    toggle: {
+      focusReview: '优先练错题',
+    },
+    feedback: {
+      enterAnswer: '请先输入答案。',
+      correct: '干得好，答对了！',
+      incorrect: '还不对，再检查一下试试。',
+      reveal: '还不对，正确答案是：{answer}',
+      hintPrefix: '提示：',
+    },
+    mode: {
+      loading: '载入中…',
+      newChallenge: '新的挑战',
+      pickedByYou: '你选择的题目',
+      reviewRound: '复习模式',
+      allDone: '全部完成',
+      unavailable: '不可用',
+    },
+    statusLabel: {
+      mastered: '已掌握',
+      needsReview: '需复习',
+      fresh: '待练习',
+    },
+    pagination: {
+      page: '第 {page} / {total} 页',
+      empty: '第 0 页',
+    },
+    confirm: {
+      clearHistory: '确定要清除最近记录吗？此操作无法撤销。',
+    },
+    language: {
+      toggleLabel: '🌐 English',
+      toggleAria: '切换为英文界面',
+    },
+  },
+};
+
+let currentLocale = getInitialLocale();
+let currentModeKey = 'mode.loading';
+let currentQuestionTextKey = 'question.loading';
+let currentBrowserEmptyKey = 'browser.loading';
+let questionsReady = false;
+
+let QUESTIONS = [];
+let QUESTION_MAP = new Map(QUESTIONS.map((q) => [q.id, q]));
 
 function setMobileBrowserOpen(open) {
   if (!isIphoneExperience) {
@@ -20,6 +221,177 @@ function setMobileBrowserOpen(open) {
   if (elements.mobileBrowserScrim) {
     elements.mobileBrowserScrim.hidden = !shouldOpen;
   }
+}
+
+function getInitialLocale() {
+  if (typeof navigator !== 'undefined') {
+    const candidates = Array.isArray(navigator.languages) && navigator.languages.length
+      ? navigator.languages
+      : navigator.language
+        ? [navigator.language]
+        : [];
+    for (const candidate of candidates) {
+      const normalized = String(candidate || '').toLowerCase();
+      if (normalized.startsWith('zh')) {
+        return 'zh';
+      }
+      if (normalized.startsWith('en')) {
+        return 'en';
+      }
+    }
+  }
+  return DEFAULT_LOCALE;
+}
+
+function resolveTranslation(locale, key) {
+  const source = TRANSLATIONS[locale];
+  if (!source) {
+    return undefined;
+  }
+  return key.split('.').reduce((acc, segment) => (
+    acc && typeof acc === 'object' && segment in acc ? acc[segment] : undefined
+  ), source);
+}
+
+function formatTemplate(template, params = {}) {
+  if (typeof template !== 'string') {
+    return '';
+  }
+  return template.replace(/\{(\w+)\}/g, (match, token) => (
+    Object.prototype.hasOwnProperty.call(params, token) ? params[token] : match
+  ));
+}
+
+function t(key, params = {}) {
+  const localeValue = resolveTranslation(currentLocale, key);
+  if (localeValue !== undefined) {
+    return typeof localeValue === 'string' ? formatTemplate(localeValue, params) : localeValue;
+  }
+  const fallback = resolveTranslation(DEFAULT_LOCALE, key);
+  if (fallback !== undefined) {
+    return typeof fallback === 'string' ? formatTemplate(fallback, params) : fallback;
+  }
+  return key;
+}
+
+function setLocale(locale) {
+  const next = SUPPORTED_LOCALES.includes(locale) ? locale : DEFAULT_LOCALE;
+  if (next === currentLocale) {
+    return;
+  }
+  currentLocale = next;
+
+  const questionSnapshot = currentQuestion ? { id: currentQuestion.id } : null;
+  QUESTIONS = [];
+  QUESTION_MAP = new Map();
+  questionsReady = false;
+
+  applyTranslations();
+  updateNarrationVoiceForLocale(currentLocale);
+  ensureQuestionsReady().then(() => {
+    if (questionSnapshot) {
+      const localizedQuestion = QUESTIONS.find((q) => q.id === questionSnapshot.id);
+      if (localizedQuestion) {
+        setQuestion(localizedQuestion, 'auto');
+      } else {
+        loadNextQuestion(true);
+      }
+    } else if (!currentQuestion) {
+      loadNextQuestion(true);
+    }
+  }).catch((error) => {
+    console.error('Failed to refresh questions after locale change', error);
+  });
+
+  renderQuestionList();
+  renderHistory();
+  updateStats();
+  updateNarrationControls();
+  if (elements.questionMode) {
+    elements.questionMode.textContent = t(currentModeKey);
+  }
+  if (!currentQuestion && currentQuestionTextKey && elements.questionText) {
+    elements.questionText.textContent = t(currentQuestionTextKey);
+  }
+}
+
+function updateLanguageToggle() {
+  if (!elements.languageToggle) {
+    return;
+  }
+  elements.languageToggle.textContent = t('language.toggleLabel');
+  elements.languageToggle.setAttribute('aria-label', t('language.toggleAria'));
+}
+
+function applyTranslations() {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  document.title = t('documentTitle');
+  document.documentElement.lang = currentLocale === 'zh' ? 'zh-CN' : 'en';
+
+  const nodes = document.querySelectorAll('[data-i18n]');
+  nodes.forEach((node) => {
+    const key = node.dataset.i18n;
+    if (!key) {
+      return;
+    }
+    if (elements.questionMode && node === elements.questionMode) {
+      node.textContent = t(currentModeKey);
+      return;
+    }
+    if (elements.questionText && node === elements.questionText && currentQuestionTextKey === null) {
+      return;
+    }
+    node.textContent = t(key);
+  });
+
+  if (elements.answerInput) {
+    elements.answerInput.placeholder = t('form.answerPlaceholder');
+  }
+  if (currentQuestionTextKey && elements.questionText) {
+    elements.questionText.textContent = t(currentQuestionTextKey);
+  }
+  if (currentBrowserEmptyKey && elements.questionList) {
+    const empty = elements.questionList.querySelector('.browser__empty');
+    if (empty) {
+      empty.textContent = t(currentBrowserEmptyKey);
+    }
+  }
+  if (elements.pageIndicator && !questionsReady) {
+    elements.pageIndicator.textContent = t('pagination.empty');
+  }
+  if (elements.mobileBrowserToggle) {
+    elements.mobileBrowserToggle.setAttribute('aria-label', t('action.browseQuestions'));
+  }
+  if (elements.scoreboard) {
+    elements.scoreboard.setAttribute('aria-label', t('scoreboard.ariaLabel'));
+  }
+  if (elements.browserPanel) {
+    elements.browserPanel.setAttribute('aria-label', t('browser.ariaLabel'));
+  }
+  if (elements.historySection) {
+    elements.historySection.setAttribute('aria-label', t('history.ariaLabel'));
+  }
+  if (elements.mobileBrowserClose) {
+    elements.mobileBrowserClose.setAttribute('aria-label', t('action.closeBrowser'));
+  }
+
+  updateLanguageToggle();
+  updateNarrationControls();
+}
+
+function getVoicePreference(locale) {
+  if (locale === 'zh') {
+    return {
+      languages: ['zh-cn', 'zh-hk', 'zh-tw', 'zh', 'cmn', 'yue'],
+      keywords: ['mandarin', 'chinese', 'zh', 'xia', 'yating', 'bing', 'huihui', 'xiao', 'liang', 'yunjian', 'yunjie'],
+    };
+  }
+  return {
+    languages: ['en-us', 'en-gb', 'en-au', 'en-ca', 'en'],
+    keywords: ['natural', 'neural', 'wavenet', 'premium', 'google us english', 'google uk english', 'microsoft aria', 'microsoft guy', 'microsoft jenny'],
+  };
 }
 
 const state = loadState();
@@ -65,10 +437,14 @@ async function init() {
     streak: document.getElementById('stat-streak'),
     best: document.getElementById('stat-best'),
   };
+  elements.scoreboard = document.querySelector('.scoreboard');
   elements.confettiLayer = document.getElementById('confetti-layer');
   elements.mobileBrowserToggle = document.getElementById('mobile-browser-toggle');
   elements.mobileBrowserClose = document.getElementById('mobile-browser-close');
   elements.mobileBrowserScrim = document.getElementById('mobile-browser-scrim');
+  elements.languageToggle = document.getElementById('language-toggle');
+  elements.browserPanel = document.querySelector('.browser');
+  elements.historySection = document.querySelector('.history');
 
   if (!elements.answerForm || !elements.questionText) {
     // DOM did not load correctly; bail early.
@@ -76,14 +452,28 @@ async function init() {
     return;
   }
 
+  currentModeKey = 'mode.loading';
+  currentQuestionTextKey = 'question.loading';
+  currentBrowserEmptyKey = 'browser.loading';
+
   if (elements.prevPage && elements.nextPage) {
     elements.prevPage.addEventListener('click', () => changeBrowserPage(-1));
     elements.nextPage.addEventListener('click', () => changeBrowserPage(1));
   }
   if (elements.questionList) {
-    elements.questionList.innerHTML = '<li class="browser__empty">Loading questions…</li>';
+    elements.questionList.innerHTML = `<li class="browser__empty">${t(currentBrowserEmptyKey)}</li>`;
   }
-  elements.questionMode.textContent = 'Loading…';
+  if (elements.languageToggle) {
+    elements.languageToggle.addEventListener('click', () => {
+      const nextLocale = currentLocale === 'en' ? 'zh' : 'en';
+      setLocale(nextLocale);
+    });
+  }
+
+  applyTranslations();
+  if (elements.questionMode) {
+    elements.questionMode.textContent = t(currentModeKey);
+  }
 
   if (isIphoneExperience) {
     if (elements.mobileBrowserToggle) {
@@ -109,9 +499,15 @@ async function init() {
 
   await ensureQuestionsReady();
   if (!QUESTIONS.length) {
-    elements.questionText.textContent = 'Failed to load questions. Refresh or serve the app via localhost.';
+    currentQuestionTextKey = 'question.failedLoad';
+    currentModeKey = 'mode.unavailable';
+    if (elements.questionMode) {
+      elements.questionMode.textContent = t(currentModeKey);
+    }
+    elements.questionText.textContent = t(currentQuestionTextKey);
     if (elements.questionList) {
-      elements.questionList.innerHTML = '<li class="browser__empty">Questions could not be loaded.</li>';
+      currentBrowserEmptyKey = 'browser.error';
+      elements.questionList.innerHTML = `<li class="browser__empty">${t(currentBrowserEmptyKey)}</li>`;
     }
     elements.answerInput.disabled = true;
     elements.checkButton.disabled = true;
@@ -123,10 +519,11 @@ async function init() {
       elements.nextPage.disabled = true;
     }
     if (elements.pageIndicator) {
-      elements.pageIndicator.textContent = 'Page 0';
+      elements.pageIndicator.textContent = t('pagination.empty');
     }
     return;
   }
+  questionsReady = true;
 
   elements.reviewToggle.checked = state.focusReview;
   elements.reviewToggle.addEventListener('change', () => {
@@ -139,7 +536,7 @@ async function init() {
   elements.clearHistoryButton = document.getElementById('clear-history-button');
   if (elements.clearHistoryButton) {
     elements.clearHistoryButton.addEventListener('click', () => {
-      if (confirm('Clear recent history? This cannot be undone.')) {
+      if (confirm(t('confirm.clearHistory'))) {
         clearHistory();
       }
     });
@@ -153,13 +550,10 @@ async function init() {
   });
 
   if (elements.speakButton) {
-    if (!narration.supported) {
-      elements.speakButton.disabled = true;
-      elements.speakButton.innerHTML = '<span aria-hidden="true">🔇</span> Narration unavailable';
-      elements.speakButton.setAttribute('aria-pressed', 'false');
-    } else {
-      elements.speakButton.innerHTML = '<span aria-hidden="true">🔊</span> Read aloud';
+    if (narration.supported) {
       elements.speakButton.addEventListener('click', onNarrationToggle);
+    } else {
+      elements.speakButton.disabled = true;
     }
   }
 
@@ -179,7 +573,7 @@ async function init() {
         "'": '&#39;'
       }[ch]));
       const rendered = escapeHtml(cleaned).replace(/\n/g, '<br>');
-      elements.feedback.innerHTML = `Hint: <span class="hint-body">${rendered}</span>`;
+      elements.feedback.innerHTML = `${t('feedback.hintPrefix')} <span class="hint-body">${rendered}</span>`;
       elements.feedback.className = 'feedback feedback--hint';
       // leave the hint visible a bit longer so the user can read the steps
       setTimeout(() => {
@@ -209,7 +603,7 @@ function onSubmit(event) {
 
   const userInput = elements.answerInput.value.trim();
   if (!userInput) {
-    elements.feedback.textContent = 'Type an answer before checking.';
+    elements.feedback.textContent = t('feedback.enterAnswer');
     elements.feedback.className = 'feedback feedback--error';
     return;
   }
@@ -323,13 +717,13 @@ function registerAttempt(question, userInput, isCorrect) {
 
 function provideFeedback(isCorrect, correctAnswer, revealAnswer = false) {
   if (isCorrect) {
-    elements.feedback.textContent = 'Nice work! You nailed it.';
+    elements.feedback.textContent = t('feedback.correct');
     elements.feedback.className = 'feedback feedback--success';
     // play success sound (handled elsewhere) -- keep synth call in onSubmit
   } else {
     elements.feedback.textContent = revealAnswer
-      ? `Not yet. Here's the answer: ${correctAnswer}`
-      : 'Not yet. Check your work and try again.';
+      ? t('feedback.reveal', { answer: correctAnswer })
+      : t('feedback.incorrect');
     elements.feedback.className = 'feedback feedback--error';
     // play a failure sound to indicate incorrect answer
     playFailSound().catch((err) => {
@@ -344,8 +738,10 @@ function loadNextQuestion(force = false) {
   }
 
   if (!QUESTIONS.length) {
-    elements.questionText.textContent = 'No questions available.';
-    elements.questionMode.textContent = 'Unavailable';
+    currentQuestionTextKey = 'question.noQuestions';
+    currentModeKey = 'mode.unavailable';
+    elements.questionText.textContent = t(currentQuestionTextKey);
+    elements.questionMode.textContent = t(currentModeKey);
     elements.answerInput.disabled = true;
     elements.checkButton.disabled = true;
     elements.skipButton.disabled = true;
@@ -356,11 +752,13 @@ function loadNextQuestion(force = false) {
 
   const nextQuestion = pickQuestion();
   if (!nextQuestion) {
-    elements.questionText.textContent = 'Every question is mastered. Fantastic job!';
+    currentQuestionTextKey = 'question.masteredAll';
+    currentModeKey = 'mode.allDone';
+    elements.questionText.textContent = t(currentQuestionTextKey);
     elements.answerInput.disabled = true;
     elements.checkButton.disabled = true;
     elements.skipButton.disabled = true;
-    elements.questionMode.textContent = 'All Done';
+    elements.questionMode.textContent = t(currentModeKey);
     elements.optionsContainer.hidden = true;
     stopNarration();
     updateNarrationControls();
@@ -432,13 +830,15 @@ async function ensureQuestionsReady() {
   }
 
   try {
-    const rawDataset = Array.isArray(QUESTIONS_DATA) ? QUESTIONS_DATA : [];
+    const sourceData = currentLocale === 'zh' ? QUESTIONS_DATA_ZH : QUESTIONS_DATA_EN;
+    const rawDataset = Array.isArray(sourceData) ? sourceData : [];
     if (!Array.isArray(rawDataset) || !rawDataset.length) {
       throw new Error('Dataset is empty or malformed.');
     }
     QUESTIONS = normalizeQuestions(rawDataset);
     QUESTION_MAP = new Map(QUESTIONS.map((q) => [q.id, q]));
     browserState.page = 1;
+    questionsReady = true;
     return;
   } catch (error) {
     console.error('Dataset initialization failed', error);
@@ -446,6 +846,7 @@ async function ensureQuestionsReady() {
 
   QUESTIONS = [];
   QUESTION_MAP = new Map();
+  questionsReady = false;
 }
 
 function changeBrowserPage(delta) {
@@ -463,7 +864,8 @@ function renderQuestionList() {
   }
 
   if (!QUESTIONS.length) {
-    elements.questionList.innerHTML = '<li class="browser__empty">No questions available.</li>';
+    currentBrowserEmptyKey = questionsReady ? 'browser.emptyAll' : currentBrowserEmptyKey || 'browser.loading';
+    elements.questionList.innerHTML = `<li class="browser__empty">${t(currentBrowserEmptyKey)}</li>`;
     updatePagination(0, 0);
     return;
   }
@@ -479,10 +881,12 @@ function renderQuestionList() {
   if (!pageItems.length) {
     const empty = document.createElement('li');
     empty.className = 'browser__empty';
-    empty.textContent = 'No questions on this page.';
+    currentBrowserEmptyKey = 'browser.emptyPage';
+    empty.textContent = t(currentBrowserEmptyKey);
     elements.questionList.appendChild(empty);
     return;
   }
+  currentBrowserEmptyKey = null;
 
   pageItems.forEach((question, index) => {
     const item = document.createElement('li');
@@ -503,8 +907,12 @@ function renderQuestionList() {
     meta.className = 'browser__button-meta';
     const ordinal = question.position ?? start + index + 1;
     const progress = state.progress[question.id];
-    const status = progress?.correct ? 'Mastered' : state.incorrect.has(question.id) ? 'Needs review' : 'Fresh';
-    meta.textContent = `#${ordinal} • ${status}`;
+    const statusKey = progress?.correct
+      ? 'statusLabel.mastered'
+      : state.incorrect.has(question.id)
+        ? 'statusLabel.needsReview'
+        : 'statusLabel.fresh';
+    meta.textContent = t('browser.itemMeta', { number: ordinal, status: t(statusKey) });
 
     button.append(title, meta);
     button.addEventListener('click', () => {
@@ -518,7 +926,9 @@ function renderQuestionList() {
 
 function updatePagination(page, totalPages) {
   if (elements.pageIndicator) {
-    elements.pageIndicator.textContent = totalPages > 0 ? `Page ${page} / ${totalPages}` : 'Page 0';
+    elements.pageIndicator.textContent = totalPages > 0
+      ? t('pagination.page', { page, total: totalPages })
+      : t('pagination.empty');
   }
   if (elements.prevPage) {
     elements.prevPage.disabled = page <= 1;
@@ -541,6 +951,7 @@ function setQuestion(question, source) {
     }
   }
 
+  currentQuestionTextKey = null;
   elements.questionText.textContent = question.question;
   elements.answerInput.value = '';
   elements.answerInput.disabled = false;
@@ -550,13 +961,14 @@ function setQuestion(question, source) {
   elements.feedback.textContent = '';
   elements.feedback.className = 'feedback';
 
-  let modeLabel = 'New Challenge';
+  let modeKey = 'mode.newChallenge';
   if (source === 'manual') {
-    modeLabel = 'Picked by You';
+    modeKey = 'mode.pickedByYou';
   } else if (state.incorrect.has(question.id)) {
-    modeLabel = 'Review Round';
+    modeKey = 'mode.reviewRound';
   }
-  elements.questionMode.textContent = modeLabel;
+  currentModeKey = modeKey;
+  elements.questionMode.textContent = t(currentModeKey);
   if (isIphoneExperience && source === 'manual') {
     setMobileBrowserOpen(false);
   }
@@ -578,7 +990,7 @@ function getQuestionPreview(text) {
   if (compact.length > 140) {
     return `${compact.slice(0, 137)}…`;
   }
-  return compact || 'Untitled question';
+  return compact || t('question.untitled');
 }
 
 function onNarrationToggle() {
@@ -611,7 +1023,7 @@ function startNarration(text) {
       utterance.lang = narration.voice.lang;
     }
   } else {
-    utterance.lang = 'en-US';
+    utterance.lang = currentLocale === 'zh' ? 'zh-CN' : 'en-US';
   }
   utterance.rate = 0.95;
   utterance.pitch = 1.02;
@@ -693,7 +1105,7 @@ function updateNarrationControls() {
 
   if (!narration.supported) {
     speakButton.disabled = true;
-    speakButton.innerHTML = '<span aria-hidden="true">🔇</span> Narration unavailable';
+    speakButton.innerHTML = `<span class="button__icon" aria-hidden="true">🔇</span><span class="button__text">${t('action.readAloudUnavailable')}</span>`;
     speakButton.setAttribute('aria-pressed', 'false');
     return;
   }
@@ -703,16 +1115,16 @@ function updateNarrationControls() {
   const isPaused = narration.playing && narration.paused;
 
   speakButton.disabled = !hasQuestion;
-  let speakLabel = 'Read aloud';
+  let speakLabelKey = 'action.readAloud';
   let speakIcon = '🔊';
   if (isPlaying) {
-    speakLabel = 'Pause reading';
+    speakLabelKey = 'action.readAloudPause';
     speakIcon = '⏸️';
   } else if (isPaused) {
-    speakLabel = 'Resume reading';
+    speakLabelKey = 'action.readAloudResume';
     speakIcon = '▶️';
   }
-  speakButton.innerHTML = `<span aria-hidden="true">${speakIcon}</span> ${speakLabel}`;
+  speakButton.innerHTML = `<span class="button__icon" aria-hidden="true">${speakIcon}</span><span class="button__text">${t(speakLabelKey)}</span>`;
   speakButton.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
 }
 
@@ -791,7 +1203,7 @@ function renderHistory() {
   if (!state.history.length) {
     const emptyItem = document.createElement('li');
     emptyItem.className = 'history__item';
-    emptyItem.textContent = 'Your progress log will appear here.';
+    emptyItem.textContent = t('history.empty');
     list.appendChild(emptyItem);
     return;
   }
@@ -816,14 +1228,21 @@ function renderHistory() {
     const result = document.createElement('span');
     result.className = 'history__result';
     const showAnswer = entry.correct || entry.revealAnswer === true || !('revealAnswer' in entry);
-    const attemptNote = attemptCount > 1 ? ` (Attempt ${attemptCount})` : '';
-    result.textContent = entry.correct
-      ? wasRetry
-        ? `⚠️ Answered ${entry.userAnswer}${attemptNote}`
-        : `✅ Answered ${entry.userAnswer}${attemptNote}`
-      : showAnswer
-        ? `❌ You wrote ${entry.userAnswer}${attemptNote} • Correct answer ${entry.correctAnswer}`
-        : `❌ You wrote ${entry.userAnswer}${attemptNote} • Keep practicing!`;
+    const attemptNote = attemptCount > 1 ? t('history.attempt', { count: attemptCount }) : '';
+    let message;
+    if (entry.correct) {
+      const key = wasRetry ? 'history.answeredRetry' : 'history.answered';
+      message = t(key, { answer: entry.userAnswer, attempt: attemptNote });
+    } else if (showAnswer) {
+      message = t('history.incorrectReveal', {
+        answer: entry.userAnswer,
+        attempt: attemptNote,
+        correct: entry.correctAnswer,
+      });
+    } else {
+      message = t('history.incorrectKeep', { answer: entry.userAnswer, attempt: attemptNote });
+    }
+    result.textContent = message;
 
     item.append(question, result);
     list.appendChild(item);
@@ -838,6 +1257,9 @@ function clearHistory() {
   state.stats = { solved: 0, attempts: 0, streak: 0, best: 0 };
   state.focusReview = false;
   persistState();
+  if (elements.reviewToggle) {
+    elements.reviewToggle.checked = false;
+  }
   renderHistory();
   renderQuestionList();
   updateStats();
@@ -1098,7 +1520,7 @@ function createNarrationState() {
     if (!available.length) {
       return;
     }
-    const chosen = selectPreferredVoice(available);
+    const chosen = selectPreferredVoice(available, currentLocale);
     if (chosen) {
       state.voice = chosen;
     }
@@ -1120,23 +1542,28 @@ function createNarrationState() {
   return state;
 }
 
-function selectPreferredVoice(voices) {
+function updateNarrationVoiceForLocale(locale) {
+  if (!narration.supported) {
+    return;
+  }
+  try {
+    const synth = window.speechSynthesis;
+    const voices = synth.getVoices();
+    const chosen = selectPreferredVoice(voices, locale);
+    if (chosen) {
+      narration.voice = chosen;
+    }
+  } catch (error) {
+    // ignore voice selection errors
+  }
+}
+
+function selectPreferredVoice(voices, locale = DEFAULT_LOCALE) {
   if (!Array.isArray(voices) || !voices.length) {
     return null;
   }
 
-  const languagePriority = ['en-us', 'en-gb', 'en-au', 'en-ca', 'en'];
-  const namePriority = [
-    'natural',
-    'neural',
-    'wavenet',
-    'premium',
-    'google us english',
-    'google uk english',
-    'microsoft aria',
-    'microsoft guy',
-    'microsoft jenny',
-  ];
+  const { languages: languagePriority, keywords: namePriority } = getVoicePreference(locale);
 
   const normalized = voices.map((voice) => ({
     voice,

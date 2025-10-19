@@ -27,9 +27,28 @@ body {
   margin-bottom: 32px;
 }
 
+.app__header-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.app__header-row h1 {
+  justify-self: center;
+  margin: 0;
+}
+
+.language-toggle {
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  justify-self: end;
+}
+
 h1 {
   font-size: clamp(2.2rem, 4vw, 3rem);
-  margin-bottom: 8px;
+  margin: 0;
 }
 
 .tagline {
@@ -146,6 +165,7 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .answer-form__label {
@@ -653,6 +673,18 @@ html.is-iphone .app {
 html.is-iphone .app__header {
   text-align: left;
   margin-bottom: 24px;
+}
+
+html.is-iphone .app__header-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+html.is-iphone .language-toggle {
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  justify-self: end;
 }
 
 html.is-iphone h1 {

@@ -34,22 +34,26 @@
 <body>
   <main class="app">
     <header class="app__header">
-  <h1>Math Quest — GSM8K</h1>
+      <div class="app__header-row">
+        <h1 data-i18n="appTitle">Math Quest — GSM8K</h1>
+        <button type="button" class="button button--ghost language-toggle" id="language-toggle" aria-label="Switch language">🌐 中文</button>
+      </div>
+      <p class="tagline" data-i18n="tagline">Master word problems one win at a time.</p>
       <section class="scoreboard" aria-label="Progress">
         <div class="scoreboard__item">
-          <span class="scoreboard__label">Solved</span>
+          <span class="scoreboard__label" data-i18n="scoreboard.solved">Solved</span>
           <span class="scoreboard__value" id="stat-solved">0</span>
         </div>
         <div class="scoreboard__item">
-          <span class="scoreboard__label">Attempts</span>
+          <span class="scoreboard__label" data-i18n="scoreboard.attempts">Attempts</span>
           <span class="scoreboard__value" id="stat-attempts">0</span>
         </div>
         <div class="scoreboard__item">
-          <span class="scoreboard__label">Streak</span>
+          <span class="scoreboard__label" data-i18n="scoreboard.streak">Streak</span>
           <span class="scoreboard__value" id="stat-streak">0</span>
         </div>
         <div class="scoreboard__item">
-          <span class="scoreboard__label">Best Streak</span>
+          <span class="scoreboard__label" data-i18n="scoreboard.best">Best Streak</span>
           <span class="scoreboard__value" id="stat-best">0</span>
         </div>
       </section>
@@ -58,20 +62,20 @@
     <div class="app__content">
       <section class="question-card" aria-live="polite">
         <div class="question-card__header">
-          <div class="question-card__badge" id="question-mode">Loading…</div>
+          <div class="question-card__badge" id="question-mode" data-i18n="badge.loading">Loading…</div>
           <button type="button" class="button button--ghost mobile-browser-toggle" id="mobile-browser-toggle" aria-controls="question-list" aria-expanded="false">
-            Browse Questions
+            <span data-i18n="action.browseQuestions">Browse Questions</span>
           </button>
         </div>
         <div class="question-card__body">
-          <p class="question-card__text" id="question-text">Loading questions…</p>
+          <p class="question-card__text" id="question-text" data-i18n="question.loading">Loading questions…</p>
         </div>
         <form class="answer-form" id="answer-form">
           <div class="answer-form__label-row">
-            <label for="answer-input" class="answer-form__label">Your answer</label>
+            <label for="answer-input" class="answer-form__label" data-i18n="form.answerLabel">Your answer</label>
             <button type="button" class="button button--ghost button--icon" id="speak-toggle-button" aria-pressed="false">
               <span class="button__icon" aria-hidden="true">🔊</span>
-              <span class="button__text">Read aloud</span>
+              <span class="button__text" data-i18n="action.readAloud">Read aloud</span>
             </button>
           </div>
           <input
@@ -87,11 +91,11 @@
           <div class="answer-form__options" id="options-container" hidden></div>
           <div class="answer-form__actions">
             <div class="answer-form__actions-left">
-              <button type="submit" class="button button--primary" id="check-button">Check Answer</button>
-              <button type="button" class="button" id="skip-button">Skip</button>
+              <button type="submit" class="button button--primary" id="check-button" data-i18n="action.checkAnswer">Check Answer</button>
+              <button type="button" class="button" id="skip-button" data-i18n="action.skip">Skip</button>
             </div>
             <div class="answer-form__actions-right">
-              <button type="button" class="button button--ghost" id="hint-button">Hint</button>
+              <button type="button" class="button button--ghost" id="hint-button" data-i18n="action.hint">Hint</button>
             </div>
           </div>
         </form>
@@ -100,32 +104,32 @@
 
       <aside class="browser" aria-label="Browse questions">
         <header class="browser__header">
-          <h2>Browse Questions</h2>
+          <h2 data-i18n="browser.title">Browse Questions</h2>
           <button type="button" class="browser__close" id="mobile-browser-close" aria-label="Close question browser">
             <span aria-hidden="true">&times;</span>
           </button>
           <div class="browser__pagination">
-            <button type="button" class="button button--ghost" id="prev-page">Previous</button>
+            <button type="button" class="button button--ghost" id="prev-page" data-i18n="action.prevPage">Previous</button>
             <span class="browser__page-indicator" id="page-indicator">Page 1</span>
-            <button type="button" class="button button--ghost" id="next-page">Next</button>
+            <button type="button" class="button button--ghost" id="next-page" data-i18n="action.nextPage">Next</button>
           </div>
         </header>
         <ul class="browser__list" id="question-list">
-          <li class="browser__empty">Loading questions…</li>
+          <li class="browser__empty" data-i18n="browser.loading">Loading questions…</li>
         </ul>
       </aside>
     </div>
 
     <section class="history" aria-label="Recent activity">
       <header class="history__header">
-        <h2>Recent Turns</h2>
+        <h2 data-i18n="history.title">Recent Turns</h2>
         <div style="display:flex;align-items:center;gap:12px;">
           <label class="switch">
-            <span class="switch__label">Focus on missed questions</span>
+            <span class="switch__label" data-i18n="toggle.focusReview">Focus on missed questions</span>
             <input type="checkbox" id="review-toggle">
             <span class="switch__slider" aria-hidden="true"></span>
           </label>
-          <button type="button" id="clear-history-button" class="button button--ghost">Clear history</button>
+          <button type="button" id="clear-history-button" class="button button--ghost" data-i18n="action.clearHistory">Clear history</button>
         </div>
       </header>
       <ul class="history__list" id="history-list"></ul>

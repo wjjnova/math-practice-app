@@ -14,6 +14,7 @@ A playful GSM8K practice coach that runs entirely in the browser—no installs, 
 ## Why it sticks
 
 - **Adaptive flow** keeps mixing new problems with the ones you still need to master.
+- **One-click dataset swaps** jump between GSM8K, ARC-Easy, and ARC-Challenge from the header selector.
 - **Fast interactions** let you tap auto-generated multiple-choice options or type answers directly.
 - **Celebratory feedback** (confetti, sound, hamster) rewards streaks of four or more correct answers.
 - **Offline-ready dataset** ships as a static JavaScript module—perfect for GitHub Pages hosting.

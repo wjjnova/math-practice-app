@@ -1,5 +1,9 @@
-import QUESTIONS_DATA_EN from './data/questions_gsm8k.js';
-import QUESTIONS_DATA_ZH from './data/questions_gsm8k_zh.js';
+import QUESTIONS_DATA_EN from './data/questions_gsm8k.js?v=223b2b7e10ae';
+import QUESTIONS_DATA_ZH from './data/questions_gsm8k_zh.js?v=223b2b7e10ae';
+import QUESTIONS_ARC_EASY_EN from './data/questions_arc_easy.js?v=223b2b7e10ae';
+import QUESTIONS_ARC_CHALLENGE_EN from './data/questions_arc_challenge.js?v=223b2b7e10ae';
+import QUESTIONS_ARC_EASY_ZH from './data/questions_arc_easy_zh.js?v=223b2b7e10ae';
+import QUESTIONS_ARC_CHALLENGE_ZH from './data/questions_arc_challenge_zh.js?v=223b2b7e10ae';
 
 const STORAGE_KEY = 'math-quest-progress-v1';
 const elements = {};
@@ -11,9 +15,8 @@ const DEFAULT_LOCALE = 'en';
 
 const TRANSLATIONS = {
   en: {
-    documentTitle: 'Math Quest — GSM8K',
-    appTitle: 'Math Quest — GSM8K',
-    tagline: 'Master word problems one win at a time.',
+    documentTitle: 'Math Quest',
+    appTitle: 'Math Quest',
     scoreboard: {
       ariaLabel: 'Progress',
       solved: 'Solved',
@@ -99,15 +102,17 @@ const TRANSLATIONS = {
     confirm: {
       clearHistory: 'Clear recent history? This cannot be undone.',
     },
+    datasets: {
+      label: 'Dataset',
+    },
     language: {
       toggleLabel: '🌐 中文',
       toggleAria: 'Switch language to Chinese',
     },
   },
   zh: {
-    documentTitle: '数学探险 — GSM8K',
-    appTitle: '数学探险 — GSM8K',
-    tagline: '一次一个题目，攻克所有应用题。',
+    documentTitle: '数学探险',
+    appTitle: '数学探险',
     scoreboard: {
       ariaLabel: '进度',
       solved: '已解',
@@ -193,6 +198,9 @@ const TRANSLATIONS = {
     confirm: {
       clearHistory: '确定要清除最近记录吗？此操作无法撤销。',
     },
+    datasets: {
+      label: '题库',
+    },
     language: {
       toggleLabel: '🌐 English',
       toggleAria: '切换为英文界面',
@@ -200,11 +208,34 @@ const TRANSLATIONS = {
   },
 };
 
+const DEFAULT_DATASET_ID = 'gsm8k';
+
+const DATASETS = {
+  gsm8k: {
+    id: 'gsm8k',
+    label: { en: 'GSM8K', zh: 'GSM8K' },
+    data: { en: QUESTIONS_DATA_EN, zh: QUESTIONS_DATA_ZH },
+  },
+  arc_easy: {
+    id: 'arc_easy',
+    label: { en: 'ARC Easy', zh: 'ARC容易' },
+    data: { en: QUESTIONS_ARC_EASY_EN, zh: QUESTIONS_ARC_EASY_ZH },
+  },
+  arc_challenge: {
+    id: 'arc_challenge',
+    label: { en: 'ARC Challenge', zh: 'ARC挑战' },
+    data: { en: QUESTIONS_ARC_CHALLENGE_EN, zh: QUESTIONS_ARC_CHALLENGE_ZH },
+  },
+};
+
+const DATASET_IDS = Object.keys(DATASETS);
+
 let currentLocale = getInitialLocale();
 let currentModeKey = 'mode.loading';
 let currentQuestionTextKey = 'question.loading';
 let currentBrowserEmptyKey = 'browser.loading';
 let questionsReady = false;
+let currentDatasetId = DEFAULT_DATASET_ID;
 
 const TELEMETRY_STORAGE_KEY = 'math-quest-telemetry-id';
 const TELEMETRY = {
@@ -344,6 +375,123 @@ function getInitialLocale() {
   return DEFAULT_LOCALE;
 }
 
+function normalizeDatasetId(value) {
+  if (!value) {
+    return null;
+  }
+  const normalized = String(value).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  return DATASETS[normalized] ? normalized : null;
+}
+
+function getDatasetFromQuery() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get('dataset') || params.get('set') || params.get('ds');
+    return normalizeDatasetId(raw);
+  } catch (error) {
+    return null;
+  }
+}
+
+function getDatasetCollection(datasetId, locale) {
+  const normalizedId = normalizeDatasetId(datasetId) || DEFAULT_DATASET_ID;
+  const definition = DATASETS[normalizedId] || DATASETS[DEFAULT_DATASET_ID];
+  if (!definition) {
+    return [];
+  }
+  const perLocale = definition.data || {};
+  return perLocale[locale] || perLocale.en || [];
+}
+
+function getDatasetLabel(datasetId, locale) {
+  const definition = DATASETS[normalizeDatasetId(datasetId) || DEFAULT_DATASET_ID];
+  if (!definition) {
+    return datasetId;
+  }
+  return definition.label?.[locale] || definition.label?.en || datasetId;
+}
+
+function buildDatasetMenu() {
+  if (!elements.datasetMenu) {
+    return;
+  }
+  elements.datasetMenu.innerHTML = '';
+  DATASET_IDS.forEach((id) => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'dataset-menu__option';
+    option.dataset.datasetId = id;
+    option.setAttribute('role', 'option');
+    option.addEventListener('click', () => {
+      setDatasetMenuOpen(false);
+      changeDataset(id, { trigger: 'menu' });
+    });
+    elements.datasetMenu.appendChild(option);
+  });
+  updateDatasetUI();
+}
+
+function updateDatasetUI() {
+  const label = getDatasetLabel(currentDatasetId, currentLocale);
+  if (elements.datasetToggle) {
+    elements.datasetToggle.textContent = label;
+    elements.datasetToggle.setAttribute('aria-label', `${t('datasets.label') || 'Dataset'}: ${label}`);
+  }
+  if (elements.datasetMenu) {
+    elements.datasetMenu.querySelectorAll('[data-dataset-id]').forEach((option) => {
+      const id = option.dataset.datasetId;
+      option.textContent = getDatasetLabel(id, currentLocale);
+      const isActive = id === currentDatasetId;
+      option.classList.toggle('dataset-menu__option--active', isActive);
+      option.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+  }
+}
+
+function setDatasetMenuOpen(open) {
+  datasetMenuOpen = Boolean(open);
+  if (elements.datasetMenu) {
+    elements.datasetMenu.hidden = !datasetMenuOpen;
+  }
+  if (elements.datasetToggle) {
+    elements.datasetToggle.setAttribute('aria-expanded', datasetMenuOpen ? 'true' : 'false');
+    elements.datasetToggle.classList.toggle('dataset-toggle--open', datasetMenuOpen);
+  }
+}
+
+function ensureDatasetMenuListeners() {
+  if (datasetMenuListenersRegistered) {
+    return;
+  }
+  document.addEventListener('click', (event) => {
+    if (!datasetMenuOpen) {
+      return;
+    }
+    if (elements.datasetMenu && elements.datasetMenu.contains(event.target)) {
+      return;
+    }
+    if (elements.datasetToggle && elements.datasetToggle.contains(event.target)) {
+      return;
+    }
+    setDatasetMenuOpen(false);
+  });
+  window.addEventListener('keydown', (event) => {
+    if (!datasetMenuOpen) {
+      return;
+    }
+    if (event.key === 'Escape') {
+      setDatasetMenuOpen(false);
+      if (elements.datasetToggle) {
+        elements.datasetToggle.focus();
+      }
+    }
+  });
+  datasetMenuListenersRegistered = true;
+}
+
 function resolveTranslation(locale, key) {
   const source = TRANSLATIONS[locale];
   if (!source) {
@@ -431,7 +579,8 @@ function applyTranslations() {
   if (typeof document === 'undefined') {
     return;
   }
-  document.title = t('documentTitle');
+  const datasetLabel = getDatasetLabel(currentDatasetId, currentLocale);
+  document.title = `${t('documentTitle')} — ${datasetLabel}`;
   document.documentElement.lang = currentLocale === 'zh' ? 'zh-CN' : 'en';
 
   const nodes = document.querySelectorAll('[data-i18n]');
@@ -480,9 +629,45 @@ function applyTranslations() {
   if (elements.mobileBrowserClose) {
     elements.mobileBrowserClose.setAttribute('aria-label', t('action.closeBrowser'));
   }
+  updateDatasetUI();
 
   updateLanguageToggle();
   updateNarrationControls();
+}
+
+async function changeDataset(datasetId, options = {}) {
+  const normalized = normalizeDatasetId(datasetId) || DEFAULT_DATASET_ID;
+  if (!options.force && normalized === currentDatasetId) {
+    return;
+  }
+  currentDatasetId = normalized;
+  state.datasetId = normalized;
+  persistState();
+
+  setDatasetMenuOpen(false);
+  updateDatasetUI();
+
+  QUESTIONS = [];
+  QUESTION_MAP = new Map();
+  questionsReady = false;
+  currentQuestion = null;
+  hamsterShownForRun = false;
+  recentlyAsked.length = 0;
+  currentModeKey = 'mode.loading';
+  currentQuestionTextKey = 'question.loading';
+
+  applyTranslations();
+
+  if (!options.skipTelemetry) {
+    captureEvent('dataset_changed', { dataset: normalized, trigger: options.trigger || 'user', locale: currentLocale });
+  }
+
+  await ensureQuestionsReady();
+  renderHistory();
+  renderQuestionList();
+  updateStats();
+  updateNarrationControls();
+  loadNextQuestion(true);
 }
 
 function getVoicePreference(locale) {
@@ -506,6 +691,9 @@ const browserState = { page: 1, pageSize: 8 };
 let audioController = null;
 let consecutiveCorrect = 0;
 let hamsterShownForRun = false;
+let listenersRegistered = false;
+let datasetMenuOpen = false;
+let datasetMenuListenersRegistered = false;
 
 if (document.readyState === 'loading') {
   window.addEventListener('DOMContentLoaded', () => {
@@ -548,6 +736,8 @@ async function init() {
   elements.mobileBrowserClose = document.getElementById('mobile-browser-close');
   elements.mobileBrowserScrim = document.getElementById('mobile-browser-scrim');
   elements.languageToggle = document.getElementById('language-toggle');
+  elements.datasetToggle = document.getElementById('dataset-toggle');
+  elements.datasetMenu = document.getElementById('dataset-menu');
   elements.browserPanel = document.querySelector('.browser');
   elements.historySection = document.querySelector('.history');
 
@@ -581,6 +771,20 @@ async function init() {
       setLocale(nextLocale);
     });
   }
+
+  if (elements.datasetToggle) {
+    elements.datasetToggle.addEventListener('click', () => {
+      setDatasetMenuOpen(!datasetMenuOpen);
+    });
+  }
+  buildDatasetMenu();
+  ensureDatasetMenuListeners();
+
+  const queryDataset = getDatasetFromQuery();
+  const storedDataset = normalizeDatasetId(state.datasetId);
+  currentDatasetId = queryDataset || storedDataset || DEFAULT_DATASET_ID;
+  state.datasetId = currentDatasetId;
+  updateDatasetUI();
 
   applyTranslations();
   initTelemetry();
@@ -645,78 +849,14 @@ async function init() {
   }
   questionsReady = true;
 
-  elements.reviewToggle.checked = state.focusReview;
-  elements.reviewToggle.addEventListener('change', () => {
-    state.focusReview = elements.reviewToggle.checked;
-    persistState();
-    captureEvent('focus_review_toggled', { enabled: state.focusReview });
-    loadNextQuestion(true);
-  });
-
-  // Wire clear history button if present
-  elements.clearHistoryButton = document.getElementById('clear-history-button');
-  if (elements.clearHistoryButton) {
-    elements.clearHistoryButton.addEventListener('click', () => {
-      if (confirm(t('confirm.clearHistory'))) {
-        clearHistory();
-      }
-    });
-  }
-
-  elements.answerForm.addEventListener('submit', onSubmit);
-  elements.skipButton.addEventListener('click', () => {
-    // skipping should reset consecutive correct counter
-    consecutiveCorrect = 0;
-    captureEvent('question_skipped', { questionId: currentQuestion ? currentQuestion.id : null });
-    loadNextQuestion(true);
-  });
-
-  if (elements.speakButton) {
-    if (narration.supported) {
-      elements.speakButton.addEventListener('click', onNarrationToggle);
-    } else {
-      elements.speakButton.disabled = true;
-    }
-  }
-
-  if (elements.hintButton) {
-    elements.hintButton.addEventListener('click', () => {
-      if (!currentQuestion) return;
-      captureEvent('hint_requested', { questionId: currentQuestion.id });
-      // show the full explanatory answer (not just the final number)
-      const full = String(currentQuestion.answer ?? '');
-      // remove trailing '#### 123' final line if present
-      const cleaned = full.replace(/\n?####\s*[-+]?\d+(?:\.\d+)?\s*$/, '').trim();
-      // escape HTML and preserve newlines for safe display
-      const escapeHtml = (str) => str.replace(/[&<>"']/g, (ch) => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-      }[ch]));
-      const rendered = escapeHtml(cleaned).replace(/\n/g, '<br>');
-      elements.feedback.innerHTML = `${t('feedback.hintPrefix')} <span class="hint-body">${rendered}</span>`;
-      elements.feedback.className = 'feedback feedback--hint';
-      // leave the hint visible a bit longer so the user can read the steps
-      setTimeout(() => {
-        elements.feedback.textContent = '';
-        elements.feedback.className = 'feedback';
-      }, 5000);
-    });
-  }
-  elements.answerInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      elements.answerForm.requestSubmit();
-    }
-  });
-
-  updateStats();
   renderHistory();
   renderQuestionList();
+  updateStats();
   updateNarrationControls();
   loadNextQuestion();
-  captureEvent('app_ready', { questionCount: QUESTIONS.length });
+
+  persistState();
+  captureEvent('app_ready', { questionCount: QUESTIONS.length, dataset: currentDatasetId, locale: currentLocale });
 }
 
 function onSubmit(event) {
@@ -745,7 +885,10 @@ function onSubmit(event) {
     ? areNumbersEqual(userNumeric, correctNumeric)
     : false;
   const stringMatch = normalizedUser === normalizedTarget;
-  const isCorrect = numericMatch || stringMatch;
+  const aliasMatch = Array.isArray(currentQuestion.answerAliases)
+    ? currentQuestion.answerAliases.map((alias) => normalizeAnswer(String(alias))).includes(normalizedUser)
+    : false;
+  const isCorrect = numericMatch || stringMatch || aliasMatch;
 
   captureEvent('answer_submitted', {
     questionId: currentQuestion.id,
@@ -762,7 +905,6 @@ function onSubmit(event) {
     });
     // track consecutive correct answers
     consecutiveCorrect += 1;
-    hamsterShownForRun = false;
     // show hamster starting at 4 correct answers, growing 10% larger with each additional correct
     showHamster(consecutiveCorrect);
     window.setTimeout(() => loadNextQuestion(), 550);
@@ -770,6 +912,7 @@ function onSubmit(event) {
     elements.answerInput.select();
     // reset streak-on-success counter when incorrect
     consecutiveCorrect = 0;
+    hamsterShownForRun = false;
   }
 }
 
@@ -964,8 +1107,10 @@ async function ensureQuestionsReady() {
   }
 
   try {
-    const sourceData = currentLocale === 'zh' ? QUESTIONS_DATA_ZH : QUESTIONS_DATA_EN;
-    const rawDataset = Array.isArray(sourceData) ? sourceData : [];
+    const datasetDefinition = DATASETS[normalizeDatasetId(currentDatasetId) || DEFAULT_DATASET_ID];
+    const datasetLocale = datasetDefinition?.data?.[currentLocale] ? currentLocale : 'en';
+    const datasetCollection = getDatasetCollection(currentDatasetId, datasetLocale);
+    const rawDataset = Array.isArray(datasetCollection) ? datasetCollection : [];
     if (!Array.isArray(rawDataset) || !rawDataset.length) {
       throw new Error('Dataset is empty or malformed.');
     }
@@ -973,11 +1118,80 @@ async function ensureQuestionsReady() {
     QUESTION_MAP = new Map(QUESTIONS.map((q) => [q.id, q]));
     browserState.page = 1;
     questionsReady = true;
-    captureEvent('dataset_ready', { totalQuestions: QUESTIONS.length });
+    captureEvent('dataset_ready', { dataset: currentDatasetId, datasetLocale, totalQuestions: QUESTIONS.length });
+    if (!listenersRegistered) {
+      if (elements.reviewToggle) {
+        elements.reviewToggle.checked = state.focusReview;
+        elements.reviewToggle.addEventListener('change', () => {
+          state.focusReview = elements.reviewToggle.checked;
+          persistState();
+          captureEvent('focus_review_toggled', { enabled: state.focusReview });
+          loadNextQuestion(true);
+        });
+      }
+
+      elements.clearHistoryButton = document.getElementById('clear-history-button');
+      if (elements.clearHistoryButton) {
+        elements.clearHistoryButton.addEventListener('click', () => {
+          if (confirm(t('confirm.clearHistory'))) {
+            clearHistory();
+          }
+        });
+      }
+
+      elements.answerForm.addEventListener('submit', onSubmit);
+      elements.skipButton.addEventListener('click', () => {
+        consecutiveCorrect = 0;
+        hamsterShownForRun = false;
+        captureEvent('question_skipped', { questionId: currentQuestion ? currentQuestion.id : null });
+        loadNextQuestion(true);
+      });
+
+      if (elements.speakButton) {
+        if (narration.supported) {
+          elements.speakButton.addEventListener('click', onNarrationToggle);
+        } else {
+          elements.speakButton.disabled = true;
+        }
+      }
+
+      if (elements.hintButton) {
+        elements.hintButton.addEventListener('click', () => {
+          if (!currentQuestion) return;
+          captureEvent('hint_requested', { questionId: currentQuestion.id });
+          const full = String(currentQuestion.answer ?? '');
+          const cleaned = full.replace(/\n?####\s*[-+]?\d+(?:\.\d+)?\s*$/, '').trim();
+          const escapeHtml = (str) => str.replace(/[&<>"']/g, (ch) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+          }[ch]));
+          const rendered = escapeHtml(cleaned).replace(/\n/g, '<br>');
+          elements.feedback.innerHTML = `${t('feedback.hintPrefix')} <span class="hint-body">${rendered}</span>`;
+          elements.feedback.className = 'feedback feedback--hint';
+          setTimeout(() => {
+            elements.feedback.textContent = '';
+            elements.feedback.className = 'feedback';
+          }, 5000);
+        });
+      }
+
+      elements.answerInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          elements.answerForm.requestSubmit();
+        }
+      });
+
+      listenersRegistered = true;
+    } else if (elements.reviewToggle) {
+      elements.reviewToggle.checked = state.focusReview;
+    }
     return;
   } catch (error) {
     console.error('Dataset initialization failed', error);
-    captureEvent('dataset_load_failed', { message: String(error) });
+    captureEvent('dataset_load_failed', { dataset: currentDatasetId, locale: currentLocale, message: String(error) });
   }
 
   QUESTIONS = [];
@@ -1195,13 +1409,12 @@ function continueNarration(text) {
   }
   stopNarration({ silent: true });
   const utterance = new SpeechSynthesisUtterance(text);
+  const fallbackLang = currentLocale === 'zh' ? 'zh-CN' : 'en-US';
   if (narration.voice) {
     utterance.voice = narration.voice;
-    if (narration.voice.lang) {
-      utterance.lang = narration.voice.lang;
-    }
+    utterance.lang = narration.voice.lang || fallbackLang;
   } else {
-    utterance.lang = currentLocale === 'zh' ? 'zh-CN' : 'en-US';
+    utterance.lang = fallbackLang;
   }
   utterance.rate = 0.95;
   utterance.pitch = 1.02;
@@ -1314,6 +1527,41 @@ function renderChoices(question) {
   const container = elements.optionsContainer;
   container.innerHTML = '';
 
+  const providedChoices = Array.isArray(question.choices) ? question.choices : [];
+  const hasProvidedChoices = providedChoices.length > 0;
+
+  if (hasProvidedChoices) {
+    container.hidden = false;
+    container.classList.add('answer-form__options--provided');
+    providedChoices.forEach((choice) => {
+      const label = String(choice.label ?? '').trim();
+      const text = String(choice.text ?? '').trim();
+      const value = label || text;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'choice';
+      const display = label && text ? `${label}. ${text}` : text || label;
+      button.textContent = display;
+      if ((display || '').length > 48) {
+        button.classList.add('choice--wide');
+      }
+      button.addEventListener('click', () => {
+        Array.from(container.querySelectorAll('.choice')).forEach((el) => el.classList.remove('choice--selected'));
+        button.classList.add('choice--selected');
+        elements.answerInput.value = value;
+        elements.checkButton.focus();
+        captureEvent('choice_selected', {
+          questionId: currentQuestion ? currentQuestion.id : null,
+          value,
+        });
+      });
+      container.appendChild(button);
+    });
+    return;
+  }
+
+  container.classList.remove('answer-form__options--provided');
+
   if (typeof question.answerNumeric !== 'number' || !Number.isFinite(question.answerNumeric)) {
     container.hidden = true;
     return;
@@ -1327,6 +1575,9 @@ function renderChoices(question) {
     button.type = 'button';
     button.className = 'choice';
     button.textContent = option;
+    if ((option || '').length > 18) {
+      button.classList.add('choice--wide');
+    }
     button.addEventListener('click', () => {
       // clear selected state on other choices
       Array.from(container.querySelectorAll('.choice')).forEach((el) => el.classList.remove('choice--selected'));
@@ -1655,6 +1906,7 @@ function loadState() {
     if (parsed.settings) {
       delete parsed.settings;
     }
+    parsed.datasetId = normalizeDatasetId(parsed.datasetId) || DEFAULT_DATASET_ID;
     Object.values(parsed.progress).forEach((record) => {
       if (!record || typeof record !== 'object') {
         return;
@@ -1751,31 +2003,38 @@ function selectPreferredVoice(voices, locale = DEFAULT_LOCALE) {
 
   const { languages: languagePriority, keywords: namePriority } = getVoicePreference(locale);
 
-  const normalized = voices.map((voice) => ({
-    voice,
-    lang: (voice.lang || '').toLowerCase(),
-    name: (voice.name || '').toLowerCase(),
-  }));
+  let bestVoice = null;
+  let bestScore = -Infinity;
 
-  const languageMatches = normalized.filter((entry) => languagePriority.some(
-    (prefix) => entry.lang.startsWith(prefix),
-  ));
-  const candidatePool = languageMatches.length ? languageMatches : normalized;
+  voices.forEach((voice) => {
+    if (!voice) return;
+    const lang = (voice.lang || '').toLowerCase();
+    const name = (voice.name || '').toLowerCase();
+    let score = 0;
 
-  const preferredByName = namePriority
-    .map((keyword) => candidatePool.find((entry) => entry.name.includes(keyword)))
-    .find(Boolean);
-  if (preferredByName) {
-    return preferredByName.voice;
-  }
+    languagePriority.forEach((prefix, index) => {
+      if (lang.startsWith(prefix)) {
+        score += (languagePriority.length - index) * 20;
+      }
+    });
 
-  const defaultVoice = candidatePool.find((entry) => entry.voice.default)
-    || normalized.find((entry) => entry.voice.default);
-  if (defaultVoice) {
-    return defaultVoice.voice;
-  }
+    namePriority.forEach((keyword, index) => {
+      if (name.includes(keyword)) {
+        score += (namePriority.length - index) * 5;
+      }
+    });
 
-  return candidatePool[0]?.voice ?? voices[0] ?? null;
+    if (voice.default) {
+      score += 5;
+    }
+
+    if (!bestVoice || score > bestScore) {
+      bestVoice = voice;
+      bestScore = score;
+    }
+  });
+
+  return bestVoice || voices[0] || null;
 }
 
 function defaultState() {
@@ -1790,6 +2049,7 @@ function defaultState() {
     incorrect: new Set(),
     history: [],
     focusReview: false,
+    datasetId: DEFAULT_DATASET_ID,
   };
 }
 

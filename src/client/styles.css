@@ -23,27 +23,146 @@ body {
 }
 
 .app__header {
+  position: relative;
   text-align: center;
   margin-bottom: 32px;
 }
 
 .app__header-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 12px;
   margin-bottom: 8px;
 }
 
-.app__header-row h1 {
-  justify-self: center;
+.app__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: clamp(2.2rem, 4vw, 3rem);
+  font-weight: 700;
   margin: 0;
+  flex: 1 1 auto;
+}
+
+.app__title-base {
+  white-space: nowrap;
+}
+
+.dataset-toggle-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.dataset-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 18px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-weight: inherit;
+  color: #1f2a44;
+  cursor: pointer;
+  border-radius: 999px;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.dataset-toggle::after {
+  content: '▾';
+  font-size: 0.75em;
+  color: #52607a;
+  margin-left: 4px;
+}
+
+.dataset-toggle:hover,
+.dataset-toggle:focus-visible,
+.dataset-toggle.dataset-toggle--open {
+  background: rgba(31, 86, 255, 0.08);
+}
+
+.dataset-toggle:focus-visible {
+  outline: 2px solid rgba(31, 86, 255, 0.4);
+  outline-offset: 2px;
+}
+
+.app__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.dataset-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  transform: none;
+  background: #ffffff;
+  border: 1px solid #d6deec;
+  border-radius: 14px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 260px;
+  z-index: 60;
+}
+
+.dataset-menu[hidden] {
+  display: none !important;
+}
+
+.dataset-menu__option {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 1rem;
+  cursor: pointer;
+  color: #0f2342;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.dataset-menu__option:hover,
+.dataset-menu__option:focus-visible {
+  background: rgba(31, 86, 255, 0.1);
+  outline: none;
+}
+
+.dataset-menu__option--active {
+  background: rgba(31, 86, 255, 0.18);
+  color: #1f2a44;
+  font-weight: 600;
 }
 
 .language-toggle {
-  padding: 8px 12px;
-  font-size: 0.9rem;
-  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 18px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-weight: inherit;
+  font-size: inherit;
+  color: #1f2a44;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.language-toggle:hover,
+.language-toggle:focus-visible {
+  background: rgba(31, 86, 255, 0.08);
+  outline: none;
 }
 
 h1 {
@@ -51,11 +170,6 @@ h1 {
   margin: 0;
 }
 
-.tagline {
-  margin: 0;
-  font-size: 1rem;
-  color: #52607a;
-}
 
 .scoreboard {
   display: grid;
@@ -206,6 +320,11 @@ h1 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  grid-auto-flow: row dense;
+}
+
+.answer-form__options--provided {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .choice {
@@ -236,6 +355,10 @@ h1 {
   transform: translateY(-1px);
   box-shadow: 0 10px 20px rgba(14, 35, 66, 0.12);
   outline: none;
+}
+
+.choice--wide {
+  grid-column: span 2;
 }
 
 .button--icon {
@@ -675,26 +798,39 @@ html.is-iphone .app__header {
   margin-bottom: 24px;
 }
 
-html.is-iphone .app__header-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
+html.is-iphone .app__header-actions {
+  gap: 10px;
 }
 
 html.is-iphone .language-toggle {
-  padding: 6px 10px;
-  font-size: 0.85rem;
-  justify-self: end;
+  padding: 6px 14px;
+  font-size: 1.4rem;
+}
+
+html.is-iphone .app__title {
+  font-size: 1.8rem;
+  gap: 10px;
+}
+
+html.is-iphone .dataset-menu {
+  right: 0;
+  left: auto;
+}
+
+@media (max-width: 768px) {
+  .app__header-row {
+    justify-content: space-between;
+  }
+
+  .app__header-actions {
+    margin-left: 0;
+  }
 }
 
 html.is-iphone h1 {
   font-size: 1.9rem;
 }
 
-html.is-iphone .tagline {
-  font-size: 0.95rem;
-  color: #3a4b6a;
-}
 
 html.is-iphone .scoreboard {
   display: flex;
@@ -761,6 +897,10 @@ html.is-iphone .button--icon {
 html.is-iphone .answer-form__options {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+html.is-iphone .answer-form__options.answer-form__options--provided {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 html.is-iphone .choice {

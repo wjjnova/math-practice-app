@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Math Quest — GSM8K</title>
+  <title>Math Quest</title>
   <link rel="stylesheet" href="./styles.css">
   <link rel="icon" type="image/x-icon" href="./data/favicon.ico">
   <script>
@@ -79,10 +79,17 @@
   <main class="app">
     <header class="app__header">
       <div class="app__header-row">
-        <h1 data-i18n="appTitle">Math Quest — GSM8K</h1>
-        <button type="button" class="button button--ghost language-toggle" id="language-toggle" aria-label="Switch language">🌐 中文</button>
+        <h1 class="app__title">
+          <span class="app__title-base" data-i18n="appTitle">Math Quest</span>
+          <span class="dataset-toggle-wrapper">
+            <button type="button" class="dataset-toggle" id="dataset-toggle" aria-haspopup="listbox" aria-expanded="false">GSM8K</button>
+            <div class="dataset-menu" id="dataset-menu" role="listbox" hidden></div>
+          </span>
+        </h1>
+        <div class="app__header-actions">
+          <button type="button" class="button button--ghost language-toggle" id="language-toggle" aria-label="Switch language">🌐 中文</button>
+        </div>
       </div>
-      <p class="tagline" data-i18n="tagline">Master word problems one win at a time.</p>
       <section class="scoreboard" aria-label="Progress">
         <div class="scoreboard__item">
           <span class="scoreboard__label" data-i18n="scoreboard.solved">Solved</span>
@@ -186,6 +193,6 @@
   </div>
   <div class="mobile-browser-scrim" id="mobile-browser-scrim" hidden></div>
 
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app.js?v=223b2b7e10ae"></script>
 </body>
 </html>

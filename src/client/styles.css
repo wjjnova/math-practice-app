@@ -157,6 +157,12 @@ h1 {
   gap: 12px;
 }
 
+.answer-form__actions-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .answer-form__options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -473,14 +479,23 @@ h1 {
 
 
 .hamster-emoji {
-  /* target final size: 50% of smaller viewport dimension */
-  font-size: min(50vh, 50vw);
+  /* base size starts at 30% and grows by 10% with each correct answer */
+  font-size: min(30vh, 30vw);
   /* start very small and grow to full size */
   transform: scale(0.12);
   transform-origin: center center;
-  animation: hamster-grow 900ms cubic-bezier(.2,.8,.2,1) forwards;
+  animation: hamster-grow 1200ms cubic-bezier(.2,.8,.2,1) forwards;
   filter: drop-shadow(0 10px 18px rgba(16,22,37,0.18));
 }
+
+/* size classes for consecutive correct answers (starting at 4) */
+.hamster-emoji--size-1 { font-size: min(30vh, 30vw); }
+.hamster-emoji--size-2 { font-size: min(40vh, 40vw); }
+.hamster-emoji--size-3 { font-size: min(50vh, 50vw); }
+.hamster-emoji--size-4 { font-size: min(60vh, 60vw); }
+.hamster-emoji--size-5 { font-size: min(70vh, 70vw); }
+.hamster-emoji--size-6 { font-size: min(80vh, 80vw); }
+.hamster-emoji--size-7 { font-size: min(90vh, 90vw); }
 
 @keyframes hamster-grow {
   0% {
@@ -557,5 +572,16 @@ h1 {
 
   .answer-form__actions {
     flex-direction: column;
+  }
+
+  .answer-form__actions-right {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .answer-form__actions-right .button {
+    width: 100%;
   }
 }

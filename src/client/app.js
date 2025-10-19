@@ -1,11 +1,12 @@
 const STORAGE_KEY = 'math-quest-progress-v1';
-const DATASET_ENDPOINT = '/api/questions/all';
+const DATASET_ENDPOINT = '/data/questions_gsm8k.json';
 let QUESTIONS = [];
 let QUESTION_MAP = new Map(QUESTIONS.map((q) => [q.id, q]));
 
 const elements = {};
 
 const state = loadState();
+const narration = createNarrationState();
 let currentQuestion = null;
 const recentlyAsked = [];
 const browserState = { page: 1, pageSize: 8 };
@@ -34,6 +35,7 @@ async function init() {
   elements.skipButton = document.getElementById('skip-button');
   elements.optionsContainer = document.getElementById('options-container');
   elements.feedback = document.getElementById('feedback');
+  elements.speakButton = document.getElementById('speak-toggle-button');
   elements.historyList = document.getElementById('history-list');
   elements.reviewToggle = document.getElementById('review-toggle');
   elements.questionList = document.getElementById('question-list');
@@ -108,6 +110,16 @@ async function init() {
     loadNextQuestion(true);
   });
 
+  if (elements.speakButton) {
+    if (!narration.supported) {
+      elements.speakButton.disabled = true;
+      elements.speakButton.textContent = 'Narration unavailable';
+      elements.speakButton.setAttribute('aria-pressed', 'false');
+    } else {
+      elements.speakButton.addEventListener('click', onNarrationToggle);
+    }
+  }
+
   if (elements.hintButton) {
     elements.hintButton.addEventListener('click', () => {
       if (!currentQuestion) return;
@@ -142,6 +154,7 @@ async function init() {
   updateStats();
   renderHistory();
   renderQuestionList();
+  updateNarrationControls();
   loadNextQuestion();
 }
 
@@ -181,15 +194,10 @@ function onSubmit(event) {
     playCelebrationSound().catch((error) => {
       console.warn('Celebration audio failed', error);
     });
-    // track consecutive correct answers (only count if we didn't have to retry)
+    // track consecutive correct answers
     consecutiveCorrect += 1;
-    if (consecutiveCorrect > 3) {
-      // 50% chance to show the big hamster animation
-      if (Math.random() < 0.5) {
-        showHamster();
-      }
-      consecutiveCorrect = 0;
-    }
+    // show hamster starting at 4 correct answers, growing 10% larger with each additional correct
+    showHamster(consecutiveCorrect);
     window.setTimeout(() => loadNextQuestion(), 550);
   } else {
     elements.answerInput.select();
@@ -298,6 +306,8 @@ function loadNextQuestion(force = false) {
     elements.answerInput.disabled = true;
     elements.checkButton.disabled = true;
     elements.skipButton.disabled = true;
+    stopNarration();
+    updateNarrationControls();
     return;
   }
 
@@ -309,19 +319,34 @@ function loadNextQuestion(force = false) {
     elements.skipButton.disabled = true;
     elements.questionMode.textContent = 'All Done';
     elements.optionsContainer.hidden = true;
+    stopNarration();
+    updateNarrationControls();
     return;
   }
 
   setQuestion(nextQuestion, 'auto');
 }
 
-// show a temporary hamster overlay
-function showHamster() {
+// show a temporary hamster overlay with growing size
+function showHamster(consecutiveCount = 1) {
   const layer = document.getElementById('hamster-layer');
-  if (!layer) return;
-  layer.classList.add('show');
-  // remove after 2s so it remains large long enough
-  setTimeout(() => layer.classList.remove('show'), 2000);
+  const emoji = document.getElementById('hamster-emoji');
+  if (!layer || !emoji) return;
+  
+  // remove any existing size classes
+  emoji.className = 'hamster-emoji';
+  
+  // Only show hamster after 4 consecutive correct answers
+  if (consecutiveCount >= 4) {
+    // Calculate size class (starts at 1 for 30%, increases by 1 for each additional correct answer)
+    // Cap at size-7 (90% window)
+    const sizeClass = Math.min(consecutiveCount - 3, 7);
+    emoji.classList.add(`hamster-emoji--size-${sizeClass}`);
+    
+    layer.classList.add('show');
+    // remove after 2s so it remains large long enough
+    setTimeout(() => layer.classList.remove('show'), 2000);
+  }
 }
 
 function pickQuestion() {
@@ -375,7 +400,7 @@ async function ensureQuestionsReady() {
       }
     }
   } catch (error) {
-    console.error('Dataset API unavailable.', error);
+    console.error(`Dataset fetch failed from ${DATASET_ENDPOINT}`, error);
   }
 
   QUESTIONS = [];
@@ -463,6 +488,7 @@ function updatePagination(page, totalPages) {
 }
 
 function setQuestion(question, source) {
+  stopNarration({ silent: true });
   currentQuestion = question;
   rememberQuestion(question.id);
 
@@ -493,6 +519,7 @@ function setQuestion(question, source) {
 
   renderChoices(question);
   renderQuestionList();
+  updateNarrationControls();
 }
 
 function rememberQuestion(questionId) {
@@ -508,6 +535,138 @@ function getQuestionPreview(text) {
     return `${compact.slice(0, 137)}…`;
   }
   return compact || 'Untitled question';
+}
+
+function onNarrationToggle() {
+  if (!narration.supported) {
+    return;
+  }
+  if (!currentQuestion || !currentQuestion.question) {
+    return;
+  }
+  if (!narration.playing) {
+    startNarration(currentQuestion.question);
+    return;
+  }
+  if (narration.paused) {
+    resumeNarration();
+  } else {
+    pauseNarration();
+  }
+}
+
+function startNarration(text) {
+  if (!narration.supported || !text) {
+    return;
+  }
+  stopNarration({ silent: true });
+  const utterance = new SpeechSynthesisUtterance(text);
+  if (narration.voice) {
+    utterance.voice = narration.voice;
+    if (narration.voice.lang) {
+      utterance.lang = narration.voice.lang;
+    }
+  } else {
+    utterance.lang = 'en-US';
+  }
+  utterance.rate = 0.95;
+  utterance.pitch = 1.02;
+  utterance.volume = 1;
+  const handleComplete = () => {
+    if (narration.utterance !== utterance) {
+      return;
+    }
+    narration.playing = false;
+    narration.paused = false;
+    narration.utterance = null;
+    updateNarrationControls();
+  };
+  utterance.onend = handleComplete;
+  utterance.onerror = handleComplete;
+  narration.utterance = utterance;
+  narration.playing = true;
+  narration.paused = false;
+  try {
+    window.speechSynthesis.speak(utterance);
+  } catch (error) {
+    narration.playing = false;
+    narration.utterance = null;
+    console.warn('Narration failed to start', error);
+  }
+  updateNarrationControls();
+}
+
+function pauseNarration() {
+  if (!narration.supported || !narration.playing || narration.paused) {
+    return;
+  }
+  try {
+    window.speechSynthesis.pause();
+    narration.paused = true;
+  } catch (error) {
+    console.warn('Narration pause failed', error);
+  }
+  updateNarrationControls();
+}
+
+function resumeNarration() {
+  if (!narration.supported || !narration.playing || !narration.paused) {
+    return;
+  }
+  try {
+    window.speechSynthesis.resume();
+    narration.paused = false;
+  } catch (error) {
+    console.warn('Narration resume failed', error);
+  }
+  updateNarrationControls();
+}
+
+function stopNarration(options = {}) {
+  if (!narration.supported) {
+    return;
+  }
+  if (narration.playing || narration.paused) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch (error) {
+      console.warn('Narration cancel failed', error);
+    }
+  }
+  narration.playing = false;
+  narration.paused = false;
+  narration.utterance = null;
+  if (!options.silent) {
+    updateNarrationControls();
+  }
+}
+
+function updateNarrationControls() {
+  const speakButton = elements.speakButton;
+  if (!speakButton) {
+    return;
+  }
+
+  if (!narration.supported) {
+    speakButton.disabled = true;
+    speakButton.textContent = 'Narration unavailable';
+    speakButton.setAttribute('aria-pressed', 'false');
+    return;
+  }
+
+  const hasQuestion = Boolean(currentQuestion && currentQuestion.question);
+  const isPlaying = narration.playing && !narration.paused;
+  const isPaused = narration.playing && narration.paused;
+
+  speakButton.disabled = !hasQuestion;
+  let speakLabel = 'Read aloud';
+  if (isPlaying) {
+    speakLabel = 'Pause reading';
+  } else if (isPaused) {
+    speakLabel = 'Resume reading';
+  }
+  speakButton.textContent = speakLabel;
+  speakButton.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
 }
 
 
@@ -826,17 +985,21 @@ function formatNumber(value) {
 }
 
 function loadState() {
+  const defaults = defaultState();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return defaultState();
+      return defaults;
     }
     const parsed = JSON.parse(raw);
     parsed.incorrect = new Set(parsed.incorrect ?? []);
     parsed.progress = parsed.progress ?? {};
-    parsed.stats = { ...defaultState().stats, ...parsed.stats };
+    parsed.stats = { ...defaults.stats, ...parsed.stats };
     parsed.history = parsed.history ?? [];
     parsed.focusReview = Boolean(parsed.focusReview);
+    if (parsed.settings) {
+      delete parsed.settings;
+    }
     Object.values(parsed.progress).forEach((record) => {
       if (!record || typeof record !== 'object') {
         return;
@@ -848,7 +1011,7 @@ function loadState() {
     return parsed;
   } catch (error) {
     console.error('Failed to load saved state', error);
-    return defaultState();
+    return defaults;
   }
 }
 
@@ -857,11 +1020,102 @@ function persistState() {
     ...state,
     incorrect: Array.from(state.incorrect),
   };
+  delete toPersist.settings;
   // ensure we don't persist more than 20 recent history entries
   if (Array.isArray(toPersist.history) && toPersist.history.length > 20) {
     toPersist.history = toPersist.history.slice(0, 20);
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(toPersist));
+}
+
+function createNarrationState() {
+  const hasWindow = typeof window !== 'undefined';
+  const supported = hasWindow
+    && 'speechSynthesis' in window
+    && typeof window.SpeechSynthesisUtterance === 'function';
+  const state = {
+    supported,
+    playing: false,
+    paused: false,
+    utterance: null,
+    voice: null,
+  };
+
+  if (!supported) {
+    return state;
+  }
+
+  const synth = window.speechSynthesis;
+  const refreshVoice = () => {
+    const available = synth.getVoices();
+    if (!available.length) {
+      return;
+    }
+    const chosen = selectPreferredVoice(available);
+    if (chosen) {
+      state.voice = chosen;
+    }
+  };
+
+  refreshVoice();
+  if (typeof synth.addEventListener === 'function') {
+    synth.addEventListener('voiceschanged', refreshVoice);
+  } else {
+    const existingHandler = synth.onvoiceschanged;
+    synth.onvoiceschanged = (...args) => {
+      refreshVoice();
+      if (typeof existingHandler === 'function') {
+        existingHandler.apply(synth, args);
+      }
+    };
+  }
+
+  return state;
+}
+
+function selectPreferredVoice(voices) {
+  if (!Array.isArray(voices) || !voices.length) {
+    return null;
+  }
+
+  const languagePriority = ['en-us', 'en-gb', 'en-au', 'en-ca', 'en'];
+  const namePriority = [
+    'natural',
+    'neural',
+    'wavenet',
+    'premium',
+    'google us english',
+    'google uk english',
+    'microsoft aria',
+    'microsoft guy',
+    'microsoft jenny',
+  ];
+
+  const normalized = voices.map((voice) => ({
+    voice,
+    lang: (voice.lang || '').toLowerCase(),
+    name: (voice.name || '').toLowerCase(),
+  }));
+
+  const languageMatches = normalized.filter((entry) => languagePriority.some(
+    (prefix) => entry.lang.startsWith(prefix),
+  ));
+  const candidatePool = languageMatches.length ? languageMatches : normalized;
+
+  const preferredByName = namePriority
+    .map((keyword) => candidatePool.find((entry) => entry.name.includes(keyword)))
+    .find(Boolean);
+  if (preferredByName) {
+    return preferredByName.voice;
+  }
+
+  const defaultVoice = candidatePool.find((entry) => entry.voice.default)
+    || normalized.find((entry) => entry.voice.default);
+  if (defaultVoice) {
+    return defaultVoice.voice;
+  }
+
+  return candidatePool[0]?.voice ?? voices[0] ?? null;
 }
 
 function defaultState() {

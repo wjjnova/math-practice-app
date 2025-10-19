@@ -1,17 +1,30 @@
 # Math Quest
 
-A self-contained browser app that serves grade school math word problems drawn from the GSM8K dataset. The experience focuses on short practice bursts: your learner sees a single question at a time, submits a numeric answer (or taps from multiple-choice suggestions), and gets instant feedback with fun celebration effects. Missed problems automatically return for review until they are mastered.
+A playful GSM8K practice coach that runs entirely in the browser—no installs, no backend. Drill through adaptive word problems, celebrate streaks with confetti and a giant hamster, and inspect telemetry to see how learners are progressing.
 
-Access the hosted build at https://wjjnova.github.io/math-practice-app/src/client/index.html
+**▶️ [Launch the live demo](https://wjjnova.github.io/math-practice-app/src/client/index.html)**
 
-## Features
+<p align="center">
+  <img src="src/client/data/HomeScreenSample.jpeg"
+       alt="Home screen showing problem practice UI"
+       width="480"
+       style="max-width:100%;height:auto;border-radius:12px;">
+</p>
 
-- Full GSM8K training set packaged as a static JavaScript module (with an optional Python dev server that keeps the file up to date).
-- Browse the entire problem bank via a paginated sidebar and jump directly to any question.
-- Smart rotation between new questions and items that still need practice.
-- Answer input accepts numbers or fractions and offers auto-generated multiple-choice options when possible.
-- Progress tracker with streaks, best streak, and per-question history stored in `localStorage`.
-- Colorful confetti plus a cheerful chime on correct answers to keep motivation high.
+## Why it sticks
+
+- **Adaptive flow** keeps mixing new problems with the ones you still need to master.
+- **Fast interactions** let you tap auto-generated multiple-choice options or type answers directly.
+- **Celebratory feedback** (confetti, sound, hamster) rewards streaks of four or more correct answers.
+- **Offline-ready dataset** ships as a static JavaScript module—perfect for GitHub Pages hosting.
+- **Built-in telemetry** (PostHog) tracks key actions so you can spot trends and highlight wins.
+
+<p align="center">
+  <img src="src/client/data/TelemetryDemo.png"
+       alt="PostHog telemetry dashboard demo"
+       width="480"
+       style="max-width:100%;height:auto;border-radius:12px;">
+</p>
 
 ## Quick Start
 

@@ -206,6 +206,93 @@ let currentQuestionTextKey = 'question.loading';
 let currentBrowserEmptyKey = 'browser.loading';
 let questionsReady = false;
 
+const TELEMETRY_STORAGE_KEY = 'math-quest-telemetry-id';
+const TELEMETRY = {
+  ready: false,
+  distinctId: null,
+  initTimer: null,
+};
+
+function generateUUID() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  let timestamp = Date.now();
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    timestamp += performance.now();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const random = (timestamp + Math.random() * 16) % 16 | 0;
+    timestamp = Math.floor(timestamp / 16);
+    return (char === 'x' ? random : (random & 0x3) | 0x8).toString(16);
+  });
+}
+
+function captureEvent(name, properties = {}) {
+  if (!TELEMETRY.ready || typeof window === 'undefined' || typeof window.posthog === 'undefined') {
+    return;
+  }
+  try {
+    window.posthog.capture(name, { locale: currentLocale, distinctId: TELEMETRY.distinctId, ...properties });
+  } catch (error) {
+    console.warn('Telemetry capture failed', error);
+  }
+}
+
+function updateTelemetryIdentity() {
+  if (!TELEMETRY.ready || typeof window === 'undefined' || typeof window.posthog === 'undefined') {
+    return;
+  }
+  try {
+    window.posthog.identify(TELEMETRY.distinctId, { locale: currentLocale });
+  } catch (error) {
+    console.warn('Telemetry identify failed', error);
+  }
+}
+
+function initTelemetry() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  if (typeof window.posthog === 'undefined') {
+    if (!TELEMETRY.initTimer) {
+      TELEMETRY.initTimer = setTimeout(() => {
+        TELEMETRY.initTimer = null;
+        initTelemetry();
+      }, 1000);
+    }
+    return;
+  }
+  if (TELEMETRY.ready) {
+    updateTelemetryIdentity();
+    return;
+  }
+  try {
+    const storageKey = TELEMETRY_STORAGE_KEY;
+    let distinctId = null;
+    try {
+      distinctId = localStorage.getItem(storageKey);
+    } catch (storageError) {
+      distinctId = null;
+    }
+    if (!distinctId) {
+      distinctId = generateUUID();
+      try {
+        localStorage.setItem(storageKey, distinctId);
+      } catch (storageWriteError) {
+        // ignore
+      }
+    }
+    TELEMETRY.ready = true;
+    TELEMETRY.distinctId = distinctId;
+    updateTelemetryIdentity();
+    captureEvent('app_loaded', { distinctId });
+  } catch (error) {
+    console.warn('Telemetry initialization failed', error);
+    TELEMETRY.ready = false;
+  }
+}
+
 let QUESTIONS = [];
 let QUESTION_MAP = new Map(QUESTIONS.map((q) => [q.id, q]));
 
@@ -224,6 +311,20 @@ function setMobileBrowserOpen(open) {
 }
 
 function getInitialLocale() {
+  if (typeof window !== 'undefined') {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const qsLocale = params.get('lang') || params.get('locale');
+      if (qsLocale) {
+        const normalized = qsLocale.toLowerCase();
+        if (SUPPORTED_LOCALES.includes(normalized)) {
+          return normalized;
+        }
+      }
+    } catch (error) {
+      // ignore query string parsing failures
+    }
+  }
   if (typeof navigator !== 'undefined') {
     const candidates = Array.isArray(navigator.languages) && navigator.languages.length
       ? navigator.languages
@@ -288,6 +389,9 @@ function setLocale(locale) {
 
   applyTranslations();
   updateNarrationVoiceForLocale(currentLocale);
+  initTelemetry();
+  updateTelemetryIdentity();
+  captureEvent('language_changed', { locale: currentLocale });
   ensureQuestionsReady().then(() => {
     if (questionSnapshot) {
       const localizedQuestion = QUESTIONS.find((q) => q.id === questionSnapshot.id);
@@ -401,6 +505,7 @@ const recentlyAsked = [];
 const browserState = { page: 1, pageSize: 8 };
 let audioController = null;
 let consecutiveCorrect = 0;
+let hamsterShownForRun = false;
 
 if (document.readyState === 'loading') {
   window.addEventListener('DOMContentLoaded', () => {
@@ -457,8 +562,14 @@ async function init() {
   currentBrowserEmptyKey = 'browser.loading';
 
   if (elements.prevPage && elements.nextPage) {
-    elements.prevPage.addEventListener('click', () => changeBrowserPage(-1));
-    elements.nextPage.addEventListener('click', () => changeBrowserPage(1));
+    elements.prevPage.addEventListener('click', () => {
+      changeBrowserPage(-1);
+      captureEvent('pagination_previous', { page: browserState.page });
+    });
+    elements.nextPage.addEventListener('click', () => {
+      changeBrowserPage(1);
+      captureEvent('pagination_next', { page: browserState.page });
+    });
   }
   if (elements.questionList) {
     elements.questionList.innerHTML = `<li class="browser__empty">${t(currentBrowserEmptyKey)}</li>`;
@@ -466,11 +577,13 @@ async function init() {
   if (elements.languageToggle) {
     elements.languageToggle.addEventListener('click', () => {
       const nextLocale = currentLocale === 'en' ? 'zh' : 'en';
+      captureEvent('language_toggle_clicked', { nextLocale });
       setLocale(nextLocale);
     });
   }
 
   applyTranslations();
+  initTelemetry();
   if (elements.questionMode) {
     elements.questionMode.textContent = t(currentModeKey);
   }
@@ -480,14 +593,21 @@ async function init() {
       elements.mobileBrowserToggle.addEventListener('click', () => {
         const shouldOpen = !rootElement.classList.contains('browser-open');
         setMobileBrowserOpen(shouldOpen);
+        captureEvent('browser_toggle_clicked', { open: shouldOpen });
       });
       elements.mobileBrowserToggle.setAttribute('aria-expanded', 'false');
     }
     if (elements.mobileBrowserClose) {
-      elements.mobileBrowserClose.addEventListener('click', () => setMobileBrowserOpen(false));
+      elements.mobileBrowserClose.addEventListener('click', () => {
+        captureEvent('browser_panel_closed', { reason: 'button' });
+        setMobileBrowserOpen(false);
+      });
     }
     if (elements.mobileBrowserScrim) {
-      elements.mobileBrowserScrim.addEventListener('click', () => setMobileBrowserOpen(false));
+      elements.mobileBrowserScrim.addEventListener('click', () => {
+        captureEvent('browser_panel_closed', { reason: 'scrim' });
+        setMobileBrowserOpen(false);
+      });
       elements.mobileBrowserScrim.hidden = true;
     }
     window.addEventListener('keydown', (event) => {
@@ -529,6 +649,7 @@ async function init() {
   elements.reviewToggle.addEventListener('change', () => {
     state.focusReview = elements.reviewToggle.checked;
     persistState();
+    captureEvent('focus_review_toggled', { enabled: state.focusReview });
     loadNextQuestion(true);
   });
 
@@ -546,6 +667,7 @@ async function init() {
   elements.skipButton.addEventListener('click', () => {
     // skipping should reset consecutive correct counter
     consecutiveCorrect = 0;
+    captureEvent('question_skipped', { questionId: currentQuestion ? currentQuestion.id : null });
     loadNextQuestion(true);
   });
 
@@ -560,6 +682,7 @@ async function init() {
   if (elements.hintButton) {
     elements.hintButton.addEventListener('click', () => {
       if (!currentQuestion) return;
+      captureEvent('hint_requested', { questionId: currentQuestion.id });
       // show the full explanatory answer (not just the final number)
       const full = String(currentQuestion.answer ?? '');
       // remove trailing '#### 123' final line if present
@@ -593,6 +716,7 @@ async function init() {
   renderQuestionList();
   updateNarrationControls();
   loadNextQuestion();
+  captureEvent('app_ready', { questionCount: QUESTIONS.length });
 }
 
 function onSubmit(event) {
@@ -623,6 +747,11 @@ function onSubmit(event) {
   const stringMatch = normalizedUser === normalizedTarget;
   const isCorrect = numericMatch || stringMatch;
 
+  captureEvent('answer_submitted', {
+    questionId: currentQuestion.id,
+    correct: isCorrect,
+  });
+
   const { revealAnswer } = registerAttempt(currentQuestion, userInput, isCorrect);
   provideFeedback(isCorrect, targetAnswer, revealAnswer);
 
@@ -633,6 +762,7 @@ function onSubmit(event) {
     });
     // track consecutive correct answers
     consecutiveCorrect += 1;
+    hamsterShownForRun = false;
     // show hamster starting at 4 correct answers, growing 10% larger with each additional correct
     showHamster(consecutiveCorrect);
     window.setTimeout(() => loadNextQuestion(), 550);
@@ -779,6 +909,10 @@ function showHamster(consecutiveCount = 1) {
   
   // Only show hamster after 4 consecutive correct answers
   if (consecutiveCount >= 4) {
+    if (!hamsterShownForRun) {
+      hamsterShownForRun = true;
+      captureEvent('hamster_shown', { streak: consecutiveCount });
+    }
     // Calculate size class (starts at 1 for 30%, increases by 1 for each additional correct answer)
     // Cap at size-7 (90% window)
     const sizeClass = Math.min(consecutiveCount - 3, 7);
@@ -839,9 +973,11 @@ async function ensureQuestionsReady() {
     QUESTION_MAP = new Map(QUESTIONS.map((q) => [q.id, q]));
     browserState.page = 1;
     questionsReady = true;
+    captureEvent('dataset_ready', { totalQuestions: QUESTIONS.length });
     return;
   } catch (error) {
     console.error('Dataset initialization failed', error);
+    captureEvent('dataset_load_failed', { message: String(error) });
   }
 
   QUESTIONS = [];
@@ -855,6 +991,7 @@ function changeBrowserPage(delta) {
   }
   const totalPages = Math.max(1, Math.ceil(QUESTIONS.length / browserState.pageSize));
   browserState.page = Math.min(Math.max(browserState.page + delta, 1), totalPages);
+  captureEvent('pagination_changed', { page: browserState.page, totalPages });
   renderQuestionList();
 }
 
@@ -916,6 +1053,7 @@ function renderQuestionList() {
 
     button.append(title, meta);
     button.addEventListener('click', () => {
+      captureEvent('browser_item_clicked', { questionId: question.id, page: browserState.page });
       setQuestion(question, 'manual');
     });
 
@@ -976,6 +1114,11 @@ function setQuestion(question, source) {
   renderChoices(question);
   renderQuestionList();
   updateNarrationControls();
+  captureEvent('question_viewed', {
+    questionId: question.id,
+    source,
+    numericAnswer: typeof question.answerNumeric === 'number',
+  });
 }
 
 function rememberQuestion(questionId) {
@@ -1002,16 +1145,51 @@ function onNarrationToggle() {
   }
   if (!narration.playing) {
     startNarration(currentQuestion.question);
+    captureEvent('narration_started', { questionId: currentQuestion.id, locale: currentLocale });
     return;
   }
   if (narration.paused) {
     resumeNarration();
+    captureEvent('narration_resumed', { questionId: currentQuestion.id, locale: currentLocale });
   } else {
     pauseNarration();
+    captureEvent('narration_paused', { questionId: currentQuestion.id, locale: currentLocale });
   }
 }
 
 function startNarration(text) {
+  if (!narration.supported || !text) {
+    return;
+  }
+  updateNarrationVoiceForLocale(currentLocale);
+  if (!narration.voice) {
+    try {
+      const synth = window.speechSynthesis;
+      const pollVoices = () => {
+        const voices = synth.getVoices();
+        if (voices && voices.length) {
+          const chosen = selectPreferredVoice(voices, currentLocale);
+          if (chosen) {
+            narration.voice = chosen;
+          }
+          proceed();
+        } else {
+          setTimeout(pollVoices, 120);
+        }
+      };
+      const proceed = () => {
+        continueNarration(text);
+      };
+      pollVoices();
+      return;
+    } catch (error) {
+      console.warn('Narration voice polling failed', error);
+    }
+  }
+  continueNarration(text);
+}
+
+function continueNarration(text) {
   if (!narration.supported || !text) {
     return;
   }
@@ -1088,6 +1266,9 @@ function stopNarration(options = {}) {
     } catch (error) {
       console.warn('Narration cancel failed', error);
     }
+    if (!options.silent && currentQuestion) {
+      captureEvent('narration_stopped', { questionId: currentQuestion.id, locale: currentLocale });
+    }
   }
   narration.playing = false;
   narration.paused = false;
@@ -1153,6 +1334,10 @@ function renderChoices(question) {
       elements.answerInput.value = option;
       // move focus to Check button for quick keyboard use
       elements.checkButton.focus();
+      captureEvent('choice_selected', {
+        questionId: currentQuestion ? currentQuestion.id : null,
+        value: option,
+      });
     });
     container.appendChild(button);
   });
@@ -1263,6 +1448,7 @@ function clearHistory() {
   renderHistory();
   renderQuestionList();
   updateStats();
+  captureEvent('history_cleared');
 }
 
 function spawnConfetti() {

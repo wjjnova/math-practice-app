@@ -129,16 +129,41 @@
               <span class="button__text" data-i18n="action.readAloud">Read aloud</span>
             </button>
           </div>
-          <input
-            id="answer-input"
-            name="answer"
-            class="answer-form__input"
-            type="text"
-            inputmode="decimal"
-            autocomplete="off"
-            readonly
-            placeholder="Choose an option"
-          >
+          <div class="answer-form__input-wrapper">
+            <input
+              id="answer-input"
+              name="answer"
+              class="answer-form__input"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              readonly
+              placeholder="Choose an option"
+            >
+            <button
+              type="button"
+              class="button button--ghost calculator__toggle"
+              id="calculator-toggle"
+              aria-expanded="false"
+              aria-label="Toggle scratch pad calculator"
+            >
+              <span class="calculator__toggle-icon" aria-hidden="true">✍🏼</span>
+            </button>
+          </div>
+          <div class="calculator answer-form__calculator" id="calculator-panel" hidden>
+            <label class="calculator__label" id="calculator-label" for="calculator-input">Scratch pad</label>
+            <textarea
+              id="calculator-input"
+              class="calculator__textarea"
+              placeholder="Type a formula, e.g. (35 + 12) / 7"
+              rows="4"
+            ></textarea>
+            <div class="calculator__controls">
+              <button type="button" class="button calculator__button" id="calculator-evaluate">Evaluate</button>
+              <button type="button" class="button button--ghost calculator__button" id="calculator-clear">Clear</button>
+            </div>
+            <div class="calculator__feedback" id="calculator-feedback" role="status" aria-live="polite"></div>
+          </div>
           <div class="answer-form__options" id="options-container" hidden></div>
           <div class="answer-form__actions">
             <div class="answer-form__actions-left">
@@ -193,6 +218,6 @@
   </div>
   <div class="mobile-browser-scrim" id="mobile-browser-scrim" hidden></div>
 
-  <script type="module" src="./app.js?v=223b2b7e10ae"></script>
+  <script type="module" src="./app.js?v=e81b47ec34ca"></script>
 </body>
 </html>

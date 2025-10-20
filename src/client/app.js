@@ -1,12 +1,17 @@
-import QUESTIONS_DATA_EN from './data/questions_gsm8k.js?v=223b2b7e10ae';
-import QUESTIONS_DATA_ZH from './data/questions_gsm8k_zh.js?v=223b2b7e10ae';
-import QUESTIONS_ARC_EASY_EN from './data/questions_arc_easy.js?v=223b2b7e10ae';
-import QUESTIONS_ARC_CHALLENGE_EN from './data/questions_arc_challenge.js?v=223b2b7e10ae';
-import QUESTIONS_ARC_EASY_ZH from './data/questions_arc_easy_zh.js?v=223b2b7e10ae';
-import QUESTIONS_ARC_CHALLENGE_ZH from './data/questions_arc_challenge_zh.js?v=223b2b7e10ae';
+import QUESTIONS_DATA_EN from './data/questions_gsm8k.js?v=e81b47ec34ca';
+import QUESTIONS_DATA_ZH from './data/questions_gsm8k_zh.js?v=e81b47ec34ca';
+import QUESTIONS_ARC_EASY_EN from './data/questions_arc_easy.js?v=e81b47ec34ca';
+import QUESTIONS_ARC_CHALLENGE_EN from './data/questions_arc_challenge.js?v=e81b47ec34ca';
+import QUESTIONS_ARC_EASY_ZH from './data/questions_arc_easy_zh.js?v=e81b47ec34ca';
+import QUESTIONS_ARC_CHALLENGE_ZH from './data/questions_arc_challenge_zh.js?v=e81b47ec34ca';
 
 const STORAGE_KEY = 'math-quest-progress-v1';
 const elements = {};
+const calculatorState = {
+  open: false,
+  lastResult: null,
+};
+const CALCULATOR_ALLOWED_PATTERN = /^[0-9+\-*/().^% ,\s]+$/;
 const rootElement = document.documentElement;
 const isIphoneExperience = rootElement.classList.contains('is-iphone');
 
@@ -81,6 +86,19 @@ const TRANSLATIONS = {
       incorrect: 'Not yet. Check your work and try again.',
       reveal: "Not yet. Here's the answer: {answer}",
       hintPrefix: 'Hint:',
+    },
+    calculator: {
+      toggleShow: 'Show calculator',
+      toggleHide: 'Hide calculator',
+      ariaLabel: 'Toggle scratch pad calculator',
+      label: 'Scratch pad',
+      placeholder: 'Type a formula, e.g. (35 + 12) / 7',
+      evaluate: 'Evaluate',
+      clear: 'Clear',
+      result: 'Result: {value}',
+      errorEmpty: 'Enter a formula to evaluate.',
+      errorInvalid: 'Only numbers and +-*/()^% are allowed.',
+      errorMath: 'Could not evaluate. Check the formula.',
     },
     mode: {
       loading: 'Loading…',
@@ -177,6 +195,19 @@ const TRANSLATIONS = {
       incorrect: '还不对，再检查一下试试。',
       reveal: '还不对，正确答案是：{answer}',
       hintPrefix: '提示：',
+    },
+    calculator: {
+      toggleShow: '显示计算器',
+      toggleHide: '隐藏计算器',
+      ariaLabel: '展开或收起草稿计算器',
+      label: '草稿计算',
+      placeholder: '输入公式，例如 (35 + 12) / 7',
+      evaluate: '计算',
+      clear: '清除',
+      result: '结果：{value}',
+      errorEmpty: '请输入要计算的公式。',
+      errorInvalid: '仅允许使用数字和符号 +-*/()^%。',
+      errorMath: '无法计算，请检查公式。',
     },
     mode: {
       loading: '载入中…',
@@ -338,6 +369,189 @@ function setMobileBrowserOpen(open) {
   }
   if (elements.mobileBrowserScrim) {
     elements.mobileBrowserScrim.hidden = !shouldOpen;
+  }
+}
+
+function updateCalculatorStrings() {
+  if (elements.calculatorToggle) {
+    const actionKey = calculatorState.open ? 'calculator.toggleHide' : 'calculator.toggleShow';
+    elements.calculatorToggle.setAttribute('aria-label', t('calculator.ariaLabel'));
+    elements.calculatorToggle.setAttribute('title', t(actionKey));
+  }
+  if (elements.calculatorLabel) {
+    elements.calculatorLabel.textContent = t('calculator.label');
+  }
+  if (elements.calculatorInput) {
+    elements.calculatorInput.placeholder = t('calculator.placeholder');
+    elements.calculatorInput.setAttribute('aria-label', t('calculator.label'));
+  }
+  if (elements.calculatorEvaluate) {
+    elements.calculatorEvaluate.textContent = t('calculator.evaluate');
+  }
+  if (elements.calculatorClear) {
+    elements.calculatorClear.textContent = t('calculator.clear');
+  }
+}
+
+function setCalculatorOpen(open, options = {}) {
+  const shouldOpen = Boolean(open);
+  calculatorState.open = shouldOpen;
+  if (elements.calculatorPanel) {
+    elements.calculatorPanel.hidden = !shouldOpen;
+  }
+  if (elements.calculatorToggle) {
+    elements.calculatorToggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+  }
+  updateCalculatorStrings();
+  if (options.skipFocus) {
+    return;
+  }
+  if (shouldOpen) {
+    if (elements.calculatorInput) {
+      window.setTimeout(() => {
+        elements.calculatorInput.focus();
+        try {
+          const length = elements.calculatorInput.value.length;
+          if (typeof elements.calculatorInput.setSelectionRange === 'function') {
+            elements.calculatorInput.setSelectionRange(length, length);
+          }
+        } catch (focusError) {
+          // ignore selection errors
+        }
+      }, 0);
+    }
+  } else if (options.focusAnswer && elements.answerInput) {
+    window.setTimeout(() => {
+      elements.answerInput.focus();
+    }, 0);
+  }
+}
+
+function setCalculatorFeedback(message, variant = 'neutral') {
+  if (!elements.calculatorFeedback) {
+    return;
+  }
+  const baseClass = 'calculator__feedback';
+  elements.calculatorFeedback.textContent = message;
+  elements.calculatorFeedback.className = baseClass;
+  if (variant === 'success' || variant === 'error') {
+    elements.calculatorFeedback.classList.add(`${baseClass}--${variant}`);
+  }
+}
+
+function resetCalculator(options = {}) {
+  const {
+    close = true,
+    skipFocus = true,
+    keepFeedback = false,
+  } = options;
+  calculatorState.lastResult = null;
+  if (elements.calculatorInput) {
+    elements.calculatorInput.value = '';
+  }
+  if (!keepFeedback) {
+    setCalculatorFeedback('', 'neutral');
+  }
+  if (close) {
+    setCalculatorOpen(false, { skipFocus });
+  } else {
+    updateCalculatorStrings();
+  }
+}
+
+function formatCalculatorResult(value) {
+  if (!Number.isFinite(value)) {
+    throw new Error('Result is not finite.');
+  }
+  if (Number.isInteger(value)) {
+    return value.toString();
+  }
+  const precise = value.toPrecision(12);
+  const formatted = precise.includes('e') ? value.toFixed(6) : precise;
+  return formatted.replace(/(?:\.0+|(\.\d*?)[0]+)$/, '$1').replace(/\.$/, '');
+}
+
+function evaluateCalculatorExpression(rawExpression) {
+  const trimmed = rawExpression.trim();
+  if (!trimmed) {
+    const error = new Error('Expression is empty.');
+    error.code = 'empty';
+    throw error;
+  }
+  const stripped = trimmed.replace(/,/g, '');
+  if (!CALCULATOR_ALLOWED_PATTERN.test(stripped)) {
+    const error = new Error('Expression contains unsupported characters.');
+    error.code = 'invalid';
+    throw error;
+  }
+  const normalized = stripped.replace(/\^/g, '**');
+  let result;
+  try {
+    result = Function('"use strict"; return (' + normalized + ');')();
+  } catch (error) {
+    const wrapped = new Error('Failed to evaluate expression.');
+    wrapped.code = 'syntax';
+    wrapped.original = error;
+    throw wrapped;
+  }
+  if (!Number.isFinite(result)) {
+    const error = new Error('Result is not finite.');
+    error.code = 'not_finite';
+    throw error;
+  }
+  return formatCalculatorResult(result);
+}
+
+function evaluateCalculator(options = {}) {
+  if (!elements.calculatorInput) {
+    return null;
+  }
+  const { silent = false, writeAnswer = false } = options;
+  const expression = elements.calculatorInput.value || '';
+  if (!expression.trim()) {
+    if (!silent) {
+      setCalculatorFeedback(t('calculator.errorEmpty'), 'error');
+    } else {
+      setCalculatorFeedback('', 'neutral');
+    }
+    calculatorState.lastResult = null;
+    return null;
+  }
+  const normalizedLines = expression
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (!normalizedLines.length) {
+    if (!silent) {
+      setCalculatorFeedback(t('calculator.errorEmpty'), 'error');
+    } else {
+      setCalculatorFeedback('', 'neutral');
+    }
+    calculatorState.lastResult = null;
+    return null;
+  }
+  try {
+    const lastLine = normalizedLines[normalizedLines.length - 1];
+    const finalResult = evaluateCalculatorExpression(lastLine);
+    calculatorState.lastResult = finalResult;
+    setCalculatorFeedback(t('calculator.result', { value: finalResult }), 'success');
+    if (writeAnswer && elements.answerInput) {
+      elements.answerInput.value = finalResult;
+      setCalculatorOpen(false, { focusAnswer: true });
+    }
+    return finalResult;
+  } catch (error) {
+    calculatorState.lastResult = null;
+    if (error.code === 'invalid') {
+      setCalculatorFeedback(t('calculator.errorInvalid'), 'error');
+    } else if (error.code === 'empty') {
+      setCalculatorFeedback(t('calculator.errorEmpty'), 'error');
+    } else {
+      setCalculatorFeedback(t('calculator.errorMath'), 'error');
+    }
+    console.warn('Calculator evaluation failed', error);
+    return null;
   }
 }
 
@@ -602,6 +816,7 @@ function applyTranslations() {
   if (elements.answerInput) {
     elements.answerInput.placeholder = t('form.answerPlaceholder');
   }
+  updateCalculatorStrings();
   if (currentQuestionTextKey && elements.questionText) {
     elements.questionText.textContent = t(currentQuestionTextKey);
   }
@@ -629,6 +844,7 @@ function applyTranslations() {
   if (elements.mobileBrowserClose) {
     elements.mobileBrowserClose.setAttribute('aria-label', t('action.closeBrowser'));
   }
+  ensureNarrationListener();
   updateDatasetUI();
 
   updateLanguageToggle();
@@ -695,6 +911,20 @@ let listenersRegistered = false;
 let datasetMenuOpen = false;
 let datasetMenuListenersRegistered = false;
 
+function ensureNarrationListener() {
+  const speakButton = elements.speakButton;
+  if (!speakButton) {
+    return;
+  }
+  speakButton.removeEventListener('click', onNarrationToggle);
+  if (narration.supported) {
+    speakButton.addEventListener('click', onNarrationToggle);
+    speakButton.disabled = false;
+  } else {
+    speakButton.disabled = true;
+  }
+}
+
 if (document.readyState === 'loading') {
   window.addEventListener('DOMContentLoaded', () => {
     init().catch((error) => {
@@ -740,6 +970,15 @@ async function init() {
   elements.datasetMenu = document.getElementById('dataset-menu');
   elements.browserPanel = document.querySelector('.browser');
   elements.historySection = document.querySelector('.history');
+  elements.calculatorToggle = document.getElementById('calculator-toggle');
+  elements.calculatorPanel = document.getElementById('calculator-panel');
+  elements.calculatorLabel = document.getElementById('calculator-label');
+  elements.calculatorInput = document.getElementById('calculator-input');
+  elements.calculatorEvaluate = document.getElementById('calculator-evaluate');
+  elements.calculatorClear = document.getElementById('calculator-clear');
+  elements.calculatorFeedback = document.getElementById('calculator-feedback');
+
+  ensureNarrationListener();
 
   if (!elements.answerForm || !elements.questionText) {
     // DOM did not load correctly; bail early.
@@ -897,6 +1136,7 @@ function onSubmit(event) {
 
   const { revealAnswer } = registerAttempt(currentQuestion, userInput, isCorrect);
   provideFeedback(isCorrect, targetAnswer, revealAnswer);
+  resetCalculator({ close: true, skipFocus: true });
 
   if (isCorrect) {
     spawnConfetti();
@@ -1009,6 +1249,8 @@ function loadNextQuestion(force = false) {
   if (!force && elements.answerInput.value.trim() && !elements.feedback.textContent) {
     return;
   }
+
+  resetCalculator({ close: true, skipFocus: true });
 
   if (!QUESTIONS.length) {
     currentQuestionTextKey = 'question.noQuestions';
@@ -1147,13 +1389,7 @@ async function ensureQuestionsReady() {
         loadNextQuestion(true);
       });
 
-      if (elements.speakButton) {
-        if (narration.supported) {
-          elements.speakButton.addEventListener('click', onNarrationToggle);
-        } else {
-          elements.speakButton.disabled = true;
-        }
-      }
+      ensureNarrationListener();
 
       if (elements.hintButton) {
         elements.hintButton.addEventListener('click', () => {
@@ -1175,6 +1411,29 @@ async function ensureQuestionsReady() {
             elements.feedback.textContent = '';
             elements.feedback.className = 'feedback';
           }, 5000);
+        });
+      }
+
+      if (elements.calculatorToggle) {
+        elements.calculatorToggle.addEventListener('click', () => {
+          const shouldOpen = !calculatorState.open;
+          setCalculatorOpen(shouldOpen, { focusAnswer: !shouldOpen });
+          captureEvent('calculator_toggle_clicked', { open: shouldOpen });
+        });
+      }
+      if (elements.calculatorEvaluate) {
+        elements.calculatorEvaluate.addEventListener('click', () => {
+          const result = evaluateCalculator({ writeAnswer: true });
+          captureEvent('calculator_evaluated', { success: result !== null });
+        });
+      }
+      if (elements.calculatorClear) {
+        elements.calculatorClear.addEventListener('click', () => {
+          resetCalculator({ close: false, skipFocus: true });
+          captureEvent('calculator_cleared');
+          if (elements.calculatorInput) {
+            elements.calculatorInput.focus();
+          }
         });
       }
 
@@ -1294,6 +1553,7 @@ function setQuestion(question, source) {
   stopNarration({ silent: true });
   currentQuestion = question;
   rememberQuestion(question.id);
+  resetCalculator({ close: true, skipFocus: true });
 
   const questionIndex = QUESTIONS.findIndex((entry) => entry.id === question.id);
   if (questionIndex >= 0) {
@@ -1956,17 +2216,25 @@ function createNarrationState() {
   const refreshVoice = () => {
     const available = synth.getVoices();
     if (!available.length) {
+      // Try again shortly if no voices are available yet
+      setTimeout(refreshVoice, 100);
       return;
     }
     const chosen = selectPreferredVoice(available, currentLocale);
     if (chosen) {
       state.voice = chosen;
+      updateNarrationControls();
     }
   };
 
+  // Initial check for voices
   refreshVoice();
+
+  // Listen for voices being loaded
   if (typeof synth.addEventListener === 'function') {
-    synth.addEventListener('voiceschanged', refreshVoice);
+    synth.addEventListener('voiceschanged', () => {
+      refreshVoice();
+    });
   } else {
     const existingHandler = synth.onvoiceschanged;
     synth.onvoiceschanged = (...args) => {
